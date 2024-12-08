@@ -45,4 +45,4 @@ out/
 .zep-cache/
 
 # zep archive file
-EcoCity.zepapp.zip
+*.zepapp.zip
