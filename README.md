@@ -1,6 +1,5 @@
 # 🌱 프로젝트 제목
-![logo](https://github.com/user-attachments/assets/60ad5d4b-e320-4e9a-ae8a-d52fec7f4e11)
-
+![logo](https://github.com/user-attachments/assets/1393d92d-0ddd-424d-8368-b4316d3e22dc)
 
 에코시티: 친환경 생활을 실천하기
 > 환경공학과와 실감미디어의 융합
