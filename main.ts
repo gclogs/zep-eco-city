@@ -2,6 +2,7 @@
  * Copyright (c) 2022 ZEP Co., LTD
  */
 
+import { Script } from "vm";
 import "zep-script";
 import { ObjectEffectType, ScriptPlayer, TileEffectType } from "zep-script";
 
@@ -35,11 +36,11 @@ const STATE_END = 3003;
 
 let _gameState = STATE_INIT;
 let _stateTimer = 0;
-let transformCount = 0;
+let _transformCount = 0;
 let _answerCount = 0;
 
 // 기본 색상들
-const colors = {
+const _colors = {
     RED:        0xff0000,     // 빨간색
     GREEN:      0x00ff00,     // 초록색
     BLUE:       0x0000ff,     // 파란색
@@ -226,8 +227,11 @@ const environmentManager = {
     }
 };
 
-// 이동 모드 정의
-const MovementModes = {
+// 플레이어 관리자
+const playerManager = {
+    players: {},
+
+    // 이동 모드 정의
     WALKING: {
         speed: 80,
         title: "🚶🏻 걷기 모드",
@@ -237,12 +241,7 @@ const MovementModes = {
         speed: 100,
         title: "👟 달리기 모드",
         carbonEmission: 0.02   // 달리기 모드시 0.05톤 증가
-    }
-};
-
-// 플레이어 관리자
-const playerManager = {
-    players: {},
+    },
 
     // 플레이어 초기화
     initPlayer: function(player) {
@@ -250,11 +249,11 @@ const playerManager = {
         this.players[player.id] = {
             id: player.id,
             name: player.name,
-            mode: MovementModes.WALKING
+            mode: this.WALKING
         };
         
-        player.moveSpeed = MovementModes.WALKING.speed;
-        player.title = MovementModes.WALKING.title;
+        player.moveSpeed = this.WALKING.speed;
+        player.title = this.WALKING.title;
         player.sendUpdated();
     },
 
@@ -273,9 +272,9 @@ const playerManager = {
         }
 
         const newMode = 
-            playerData.mode === MovementModes.WALKING 
-                ? MovementModes.RUNNING 
-                : MovementModes.WALKING;
+            playerData.mode === this.WALKING 
+                ? this.RUNNING 
+                : this.WALKING;
         
         playerData.mode = newMode;
         player.moveSpeed = newMode.speed;
@@ -287,6 +286,116 @@ const playerManager = {
     }
 };
 
+const monsterManager = {
+    respawnTimer: 0,
+    monster: 
+        ScriptApp.loadSpritesheet('monster.png', 96, 96, {
+            // defined base anim
+            left: [8, 9, 10, 11],
+            up: [12, 13, 14, 15],
+            down: [4, 5, 6, 7],
+            right: [16, 17, 18, 19],
+        }, 8),
+
+
+    createMonster: function() {
+        let randomX: number, randomY: number;
+        let isValidPosition = false;
+        
+        // 랜덤 위치 찾기 (최대 100회 시도)
+        for (let attempt = 0; attempt < 100; attempt++) {
+            // (12,8) ~ (74,47) 사이의 랜덤 좌표 생성
+            randomX = Math.floor(Math.random() * (74 - 12 + 1)) + 12;
+            randomY = Math.floor(Math.random() * (47 - 8 + 1)) + 8;
+            
+            // 해당 위치의 타일 효과 확인 (2번은 IMPASSABLE 타입)
+            const tileEffect = ScriptMap.getTile(2, randomX, randomY);
+            
+            // IMPASSABLE 타일인 경우 생성 안 함
+            if (tileEffect === TileEffectType.IMPASSABLE) {
+                continue;
+            }
+            
+            isValidPosition = true;
+            break;
+        }
+        
+        // 유효한 위치를 찾지 못한 경우
+        if (!isValidPosition) {
+            ScriptApp.sayToStaffs("적절한 위치를 찾을 수 없습니다.");
+            return;
+        }
+        
+        const objectKey = `Monster_${randomX}_${randomY}`; // 고유한 키 생성
+        
+        ScriptApp.sayToStaffs(`몬스터 생성 위치: (${randomX}, ${randomY})`);
+        
+        const monsterObject = ScriptMap.putObjectWithKey(randomX, randomY, this.monster, {
+            npcProperty: { 
+                name: "Monster", 
+                hpColor: 0x03ff03, 
+                hp: 100, 
+                hpMax: 100 
+            },
+            overlap: true,
+            collide: true, // ★
+            movespeed: 100, 
+            key: objectKey,
+            useDirAnim: true,
+            offsetX: -8,
+            offsetY: -32,
+        });
+
+        ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
+    },
+
+    respawnMonster: function(dt: number) {
+        this.respawnTimer += dt;
+        
+        // dt가 0.02초이므로, (0.02ms × 50 = 1s)
+        if (this.respawnTimer >= 10) {
+            this.respawnTimer = 0;
+            this.createMonster();
+        }
+    },
+
+    handleObjectAttack:function(sender: ScriptPlayer, key: string) {
+        const targetObject = ScriptMap.getObjectWithKey(key) as unknown as { 
+            npcProperty: { 
+                name: string;
+                hp: number; 
+                hpMax: number; 
+                hpColor: number
+            };
+            tileX: ScriptPlayer["tileX"];
+            tileY: ScriptPlayer["tileY"];
+            sendUpdated: () => ScriptPlayer["sendUpdated"];
+        };
+    
+        if (!targetObject || !('npcProperty' in targetObject)) {
+            ScriptApp.sayToStaffs(`Invalid object or missing npcProperty for key: ${key}`);
+            return;
+        }
+    
+        targetObject.npcProperty.hp -= 10;
+        if(targetObject.npcProperty.hp > 0) {
+            const hpPercentage = targetObject.npcProperty.hp / targetObject.npcProperty.hpMax;
+            if (hpPercentage < 0.3) {
+                targetObject.npcProperty.hpColor = 0xff0000;
+            } else if (hpPercentage < 0.7) {
+                targetObject.npcProperty.hpColor = 0xffa500;
+            }
+            targetObject.sendUpdated();
+        } else {
+            sender.sendMessage( `${targetObject.npcProperty.name}을 처치하였습니다!`, _colors.RED);
+            sender.sendMessage( `${environmentManager.metrics.carbonEmission.toFixed(2)}톤 만큼 차감 되었습니다.`, _colors.MAGENTA);
+            sender.sendMessage( `$${environmentManager.metrics.carbonEmission.toFixed(2)}원 만큼 획득 하였습니다.`, _colors.DARK_GREEN);
+            sender.playSound("death.wav");
+            ScriptMap.putObjectWithKey(targetObject.tileX, targetObject.tileY, null, { key: key })
+        }
+    }
+
+}
 // 사이드바 앱이 터치(클릭)되었을 때 동작하는 함수
 ScriptApp.onSidebarTouched.Add(function (player: ScriptPlayer) {
     const widget = player.showWidget("widget.html", "sidebar", 350, 350);
@@ -330,6 +439,12 @@ ScriptApp.addOnKeyDown(82, function (player) {
 ScriptApp.onUpdate.Add(function(dt) {
     environmentManager.updateEnvironmentByMovement(dt);
     environmentManager.saveMetrics(dt); // 저장 로직 추가
+    monsterManager.respawnMonster(dt);
+});
+
+// 쓰레기 몬스터 처치 이벤트
+ScriptApp.onAppObjectAttacked.Add(function (sender: ScriptPlayer, x: number, y: number, layer: number, key: string) {
+    monsterManager.handleObjectAttack(sender, key);
 });
 
 ScriptApp.onObjectTouched.Add(function (sender: ScriptPlayer, x: number, y: number, tileID: number, obj: ScriptObject) {
@@ -343,104 +458,4 @@ ScriptApp.onObjectTouched.Add(function (sender: ScriptPlayer, x: number, y: numb
 // 초기화
 ScriptApp.onInit.Add(function() {
     environmentManager.initialize();
-});
-
-let blueman = ScriptApp.loadSpritesheet('blueman.png', 48, 64, {
-    left: [5, 6, 7, 8, 9], // 좌방향 이동 이미지
-    up: [15, 16, 17, 18, 19],
-    down: [0, 1, 2, 3, 4],
-    right: [10, 11, 12, 13, 14],
-    dance: [20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37],
-    down_jump: [38],
-    left_jump: [39],
-    right_jump: [40],
-    up_jump: [41],
-}, 8);
-
-ScriptApp.addOnKeyDown(81, function (player: ScriptPlayer) {
-    let randomX: number, randomY: number;
-    let isValidPosition = false;
-    const TILE_EFFECT = 3;
-    
-    // 랜덤 위치 찾기 (최대 100회 시도)
-    for (let attempt = 0; attempt < 100; attempt++) {
-        // (12,8) ~ (74,47) 사이의 랜덤 좌표 생성
-        randomX = Math.floor(Math.random() * (74 - 12 + 1)) + 12;
-        randomY = Math.floor(Math.random() * (47 - 8 + 1)) + 8;
-        
-        // 해당 위치의 타일 효과 확인
-        const tileEffect = ScriptMap.getTile(TILE_EFFECT, randomX, randomY);
-        
-        // IMPASSABLE 타일인 경우 생성 안 함
-        if (tileEffect === TileEffectType.IMPASSABLE) {
-            continue;
-        }
-        
-        isValidPosition = true;
-        break;
-    }
-    
-    // 유효한 위치를 찾지 못한 경우
-    if (!isValidPosition) {
-        ScriptApp.sayToStaffs("적절한 위치를 찾을 수 없습니다.");
-        return;
-    }
-    
-    const objectKey = `BlueMan_${randomX}_${randomY}`; // 고유한 키 생성
-    
-    ScriptApp.sayToStaffs(`블루맨 생성 위치: (${randomX}, ${randomY})`);
-    
-    const bluemanObject = ScriptMap.putObjectWithKey(randomX, randomY, blueman, {
-        npcProperty: { 
-            name: "BlueMan", 
-            hpColor: 0x03ff03, 
-            hp: 100, 
-            hpMax: 100 
-        },
-        overlap: true,
-        collide: true, // ★
-        movespeed: 100, 
-        key: objectKey,
-        useDirAnim: true,
-        offsetX: -8,
-        offsetY: -32,
-    });
-
-    ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
-});
-
-// 쓰레기 몬스터 처치 이벤트
-ScriptApp.onAppObjectAttacked.Add(function (sender: ScriptPlayer, x: number, y: number, layer: number, key: string) {
-    const targetObject = ScriptMap.getObjectWithKey(key) as unknown as { 
-        npcProperty: { 
-            name: string;
-            hp: number; 
-            hpMax: number; 
-            hpColor: number
-        };
-        tileX: ScriptPlayer["tileX"];
-        tileY: ScriptPlayer["tileY"];
-        sendUpdated: () => ScriptPlayer["sendUpdated"];
-    };
-
-    if (!targetObject || !('npcProperty' in targetObject)) {
-        ScriptApp.sayToStaffs(`Invalid object or missing npcProperty for key: ${key}`);
-        return;
-    }
-
-    targetObject.npcProperty.hp -= 10;
-    if(targetObject.npcProperty.hp > 0) {
-        const hpPercentage = targetObject.npcProperty.hp / targetObject.npcProperty.hpMax;
-        if (hpPercentage < 0.3) {
-            targetObject.npcProperty.hpColor = 0xff0000;
-        } else if (hpPercentage < 0.7) {
-            targetObject.npcProperty.hpColor = 0xffa500;
-        }
-        targetObject.sendUpdated();
-    } else {
-        sender.sendMessage( `${targetObject.npcProperty.name}을 처치하였습니다!`, colors.RED);
-        sender.sendMessage( `${environmentManager.metrics.carbonEmission.toFixed(2)}톤 만큼 차감 되었습니다.`, colors.MAGENTA);
-        sender.sendMessage( `$${environmentManager.metrics.carbonEmission.toFixed(2)}원 만큼 획득 하였습니다.`, colors.DARK_GREEN);
-        ScriptMap.putObjectWithKey(targetObject.tileX, targetObject.tileY, null, { key: key })
-    }
 });
