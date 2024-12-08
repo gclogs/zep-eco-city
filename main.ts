@@ -3,6 +3,7 @@
  */
 
 import "zep-script";
+import { ObjectEffectType, ScriptPlayer, TileEffectType } from "zep-script";
 
 // 환경 지표 인터페이스 정의
 interface EnvironmentMetrics {
@@ -16,11 +17,16 @@ interface EnvironmentMetrics {
         bikeLanes: number;
     };
 }
-
 // 저장소 데이터 인터페이스 정의
 interface StorageData {
     environmentMetrics?: EnvironmentMetrics;
 }
+
+class ScriptObject {
+    text: number;               // 객체의 id
+    param1: string;            // 객체의 value
+    type: ObjectEffectType;    // 객체의 타입
+};
 
 const STATE_INIT = 3000;
 const STATE_READY = 3001;
@@ -32,24 +38,32 @@ let _stateTimer = 0;
 let transformCount = 0;
 let _answerCount = 0;
 
-// 친환경 프로젝트 정의
-const EcoProjects = {
-    SOLAR_PANEL: {
-        name: "태양광 패널",
-        carbonReduction: 0.05,    // 설치당 탄소 배출량 감소
-        cost: 1000
-    },
-    TREE_PLANTING: {
-        name: "나무 심기",
-        carbonReduction: 0.02,    // 나무당 탄소 흡수량
-        cost: 500
-    },
-    BIKE_LANE: {
-        name: "자전거 도로",
-        carbonReduction: 0.03,    // 도로당 탄소 감소량
-        cost: 800
-    }
-};
+// 기본 색상들
+const colors = {
+    RED:        0xff0000,     // 빨간색
+    GREEN:      0x00ff00,     // 초록색
+    BLUE:       0x0000ff,     // 파란색
+    YELLOW:     0xffff00,     // 노란색
+    CYAN:       0x00ffff,     // 청록색
+    MAGENTA:    0xff00ff,     // 자홍색
+    WHITE:      0xffffff,     // 흰색
+    BLACK:      0x000000,     // 검정색
+    
+    // 파스텔 톤
+    LIGHT_GREEN:0x90ee90,     // 연한 초록
+    LIGHT_BLUE: 0xadd8e6,     // 연한 파랑
+    LIGHT_PINK: 0xffb6c1,     // 연한 분홍
+
+    // 어두운 톤
+    DARK_GREEN: 0x006400,     // 어두운 초록
+    DARK_BLUE:  0x00008b,     // 어두운 파랑
+    DARK_RED:   0x8b0000,     // 어두운 빨강
+
+    // 기타 유용한 색상들
+    ORANGE:     0xffa500,     // 주황색
+    PURPLE:     0x800080,     // 보라색
+    BROWN:      0xa52a2a,     // 갈색
+}
 
 // 환경 관리자
 const environmentManager = {
@@ -160,14 +174,9 @@ const environmentManager = {
         
         if (metrics.carbonEmission !== undefined) {
             const randomFactor = 0.25 + Math.random() * 1.0; // 0.25 ~ 1.25 사이의 랜덤 값
-            const projectReduction = 
-                (this.metrics.installedProjects.solarPanels * EcoProjects.SOLAR_PANEL.carbonReduction) +
-                (this.metrics.installedProjects.trees * EcoProjects.TREE_PLANTING.carbonReduction) +
-                (this.metrics.installedProjects.bikeLanes * EcoProjects.BIKE_LANE.carbonReduction);
-            
             const newValue = Math.max(
                 0, 
-                this.metrics.carbonEmission + (metrics.carbonEmission * randomFactor) - projectReduction
+                this.metrics.carbonEmission + (metrics.carbonEmission * randomFactor)
             );
             if (newValue !== this.metrics.carbonEmission) {
                 this.metrics.carbonEmission = newValue;
@@ -182,7 +191,7 @@ const environmentManager = {
                     ScriptApp.sayToStaffs(`Air pollution increased by factor ${airPollutionFactor.toFixed(2)} due to carbon threshold ${currentThreshold}`);
                 }
                 
-                ScriptApp.sayToStaffs(`Carbon emission updated to: ${newValue} (Random factor: ${randomFactor.toFixed(2)})`);
+                // ScriptApp.sayToStaffs(`Carbon emission updated to: ${newValue} (Random factor: ${randomFactor.toFixed(2)})`);
             }
         }
         
@@ -198,24 +207,6 @@ const environmentManager = {
         if (hasChanges) {
             this.updateDisplays();
         }
-    },
-
-    // 친환경 프로젝트 설치
-    installEcoProject: function(projectType: keyof typeof EcoProjects) {
-        const project = EcoProjects[projectType];
-        this.metrics.installedProjects[projectType.toLowerCase()]++;
-        
-        // 탄소 배출량 감소 적용
-        this.metrics.carbonEmission = Math.max(
-            0, 
-            this.metrics.carbonEmission - project.carbonReduction
-        );
-        
-        ScriptApp.sayToStaffs(
-            `${project.name} 설치 완료! 탄소 배출량 ${project.carbonReduction} 감소`
-        );
-        
-        this.updateDisplays();
     },
 
     // 디스플레이 업데이트
@@ -297,23 +288,23 @@ const playerManager = {
 };
 
 // 사이드바 앱이 터치(클릭)되었을 때 동작하는 함수
-ScriptApp.onSidebarTouched.Add(function (p) {
-    const widget = p.showWidget("widget.html", "sidebar", 350, 350);
+ScriptApp.onSidebarTouched.Add(function (player: ScriptPlayer) {
+    const widget = player.showWidget("widget.html", "sidebar", 350, 350);
     environmentManager.setWidget(widget);
-    p.tag.widget = widget;
+    player.tag.widget = widget;
 });
 
-// 플레이어가 퇴장 할 때 동작하는 함수
-ScriptApp.onLeavePlayer.Add(function (p) {
-    if (p.tag.widget) {
-        p.tag.widget.destroy();
-        p.tag.widget = null;
+// 플레이어가 퇴장할 때 동작하는 함수
+ScriptApp.onLeavePlayer.Add(function (player: ScriptPlayer) {
+    if (player.tag.widget) {
+        player.tag.widget.destroy();
+        player.tag.widget = null;
     }
-    playerManager.removePlayer(p);
+    playerManager.removePlayer(player);
 });
 
 // 플레이어 입장시 동작하는 함수
-ScriptApp.onJoinPlayer.Add(function(player) {
+ScriptApp.onJoinPlayer.Add(function(player: ScriptPlayer) {
     ScriptApp.sayToStaffs(`플레이어 참가: ${player.name} (ID: ${player.id})`);
     player.tag = {
         widget: null,
@@ -341,7 +332,115 @@ ScriptApp.onUpdate.Add(function(dt) {
     environmentManager.saveMetrics(dt); // 저장 로직 추가
 });
 
+ScriptApp.onObjectTouched.Add(function (sender: ScriptPlayer, x: number, y: number, tileID: number, obj: ScriptObject) {
+    if(obj.text == 1) {
+        ScriptApp.showCenterLabel("맞습니다")
+    }
+    
+    ScriptApp.sayToStaffs(`${sender.name} (${sender.id}) touched (ID: ${obj.text}) (Value: ${obj.param1})`);
+});
+
 // 초기화
 ScriptApp.onInit.Add(function() {
     environmentManager.initialize();
+});
+
+let blueman = ScriptApp.loadSpritesheet('blueman.png', 48, 64, {
+    left: [5, 6, 7, 8, 9], // 좌방향 이동 이미지
+    up: [15, 16, 17, 18, 19],
+    down: [0, 1, 2, 3, 4],
+    right: [10, 11, 12, 13, 14],
+    dance: [20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37],
+    down_jump: [38],
+    left_jump: [39],
+    right_jump: [40],
+    up_jump: [41],
+}, 8);
+
+ScriptApp.addOnKeyDown(81, function (player: ScriptPlayer) {
+    let randomX: number, randomY: number;
+    let isValidPosition = false;
+    const TILE_EFFECT = 3;
+    
+    // 랜덤 위치 찾기 (최대 100회 시도)
+    for (let attempt = 0; attempt < 100; attempt++) {
+        // (12,8) ~ (74,47) 사이의 랜덤 좌표 생성
+        randomX = Math.floor(Math.random() * (74 - 12 + 1)) + 12;
+        randomY = Math.floor(Math.random() * (47 - 8 + 1)) + 8;
+        
+        // 해당 위치의 타일 효과 확인
+        const tileEffect = ScriptMap.getTile(TILE_EFFECT, randomX, randomY);
+        
+        // IMPASSABLE 타일인 경우 생성 안 함
+        if (tileEffect === TileEffectType.IMPASSABLE) {
+            continue;
+        }
+        
+        isValidPosition = true;
+        break;
+    }
+    
+    // 유효한 위치를 찾지 못한 경우
+    if (!isValidPosition) {
+        ScriptApp.sayToStaffs("적절한 위치를 찾을 수 없습니다.");
+        return;
+    }
+    
+    const objectKey = `BlueMan_${randomX}_${randomY}`; // 고유한 키 생성
+    
+    ScriptApp.sayToStaffs(`블루맨 생성 위치: (${randomX}, ${randomY})`);
+    
+    const bluemanObject = ScriptMap.putObjectWithKey(randomX, randomY, blueman, {
+        npcProperty: { 
+            name: "BlueMan", 
+            hpColor: 0x03ff03, 
+            hp: 100, 
+            hpMax: 100 
+        },
+        overlap: true,
+        collide: true, // ★
+        movespeed: 100, 
+        key: objectKey,
+        useDirAnim: true,
+        offsetX: -8,
+        offsetY: -32,
+    });
+
+    ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
+});
+
+// 쓰레기 몬스터 처치 이벤트
+ScriptApp.onAppObjectAttacked.Add(function (sender: ScriptPlayer, x: number, y: number, layer: number, key: string) {
+    const targetObject = ScriptMap.getObjectWithKey(key) as unknown as { 
+        npcProperty: { 
+            name: string;
+            hp: number; 
+            hpMax: number; 
+            hpColor: number
+        };
+        tileX: ScriptPlayer["tileX"];
+        tileY: ScriptPlayer["tileY"];
+        sendUpdated: () => ScriptPlayer["sendUpdated"];
+    };
+
+    if (!targetObject || !('npcProperty' in targetObject)) {
+        ScriptApp.sayToStaffs(`Invalid object or missing npcProperty for key: ${key}`);
+        return;
+    }
+
+    targetObject.npcProperty.hp -= 10;
+    if(targetObject.npcProperty.hp > 0) {
+        const hpPercentage = targetObject.npcProperty.hp / targetObject.npcProperty.hpMax;
+        if (hpPercentage < 0.3) {
+            targetObject.npcProperty.hpColor = 0xff0000;
+        } else if (hpPercentage < 0.7) {
+            targetObject.npcProperty.hpColor = 0xffa500;
+        }
+        targetObject.sendUpdated();
+    } else {
+        sender.sendMessage( `${targetObject.npcProperty.name}을 처치하였습니다!`, colors.RED);
+        sender.sendMessage( `${environmentManager.metrics.carbonEmission.toFixed(2)}톤 만큼 차감 되었습니다.`, colors.MAGENTA);
+        sender.sendMessage( `$${environmentManager.metrics.carbonEmission.toFixed(2)}원 만큼 획득 하였습니다.`, colors.DARK_GREEN);
+        ScriptMap.putObjectWithKey(targetObject.tileX, targetObject.tileY, null, { key: key })
+    }
 });
