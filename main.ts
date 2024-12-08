@@ -245,10 +245,13 @@ const playerManager = {
 
     // 플레이어 초기화
     initPlayer: function(player) {
+        if (player.id in this.players) return;
+
         ScriptApp.sayToStaffs(`플레이어 초기화: ${player.name} (ID: ${player.id})`);
         this.players[player.id] = {
             id: player.id,
             name: player.name,
+            money: 0,  // 초기 돈을 0으로 설정
             mode: this.WALKING
         };
         
@@ -261,6 +264,22 @@ const playerManager = {
     removePlayer: function(player) {
         ScriptApp.sayToStaffs(`플레이어 제거: ${player.name} (ID: ${player.id})`);
         delete this.players[player.id];
+    },
+
+    addMoney: function(player, amount) {
+        if (!this.players[player.id]) {
+            this.initPlayer(player);
+        }
+        this.players[player.id].money += amount;
+        return this.players[player.id].money;
+    },
+
+    subtractMoney: function(player, amount) {
+        if (!this.players[player.id]) {
+            this.initPlayer(player);
+        }
+        this.players[player.id].money -= amount;
+        return this.players[player.id].money;
     },
 
     // 이동 모드 전환
@@ -298,7 +317,7 @@ const monsterManager = {
         }, 8),
 
 
-    createMonster: function() {
+    createMonster: function(minHp: number = 100, maxHp: number = 100) {
         let randomX: number, randomY: number;
         let isValidPosition = false;
         
@@ -332,18 +351,16 @@ const monsterManager = {
         
         const monsterObject = ScriptMap.putObjectWithKey(randomX, randomY, this.monster, {
             npcProperty: { 
-                name: "Monster", 
+                name: `쓰레기 빌런 ${Math.floor(Math.random() * 100) + 1}`, 
                 hpColor: 0x03ff03, 
-                hp: 100, 
-                hpMax: 100 
+                hp: minHp, 
+                hpMax: maxHp
             },
             overlap: true,
             collide: true, // ★
             movespeed: 100, 
             key: objectKey,
-            useDirAnim: true,
-            offsetX: -8,
-            offsetY: -32,
+            useDirAnim: true
         });
 
         ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
@@ -352,8 +369,8 @@ const monsterManager = {
     respawnMonster: function(dt: number) {
         this.respawnTimer += dt;
         
-        // dt가 0.02초이므로, (0.02ms × 50 = 1s)
-        if (this.respawnTimer >= 10) {
+        // dt가 0.02초이므로, (0.02ms × 1500 = 30s)
+        if (this.respawnTimer >= 30) { // 30초마다 빌런 생성
             this.respawnTimer = 0;
             this.createMonster();
         }
@@ -377,23 +394,60 @@ const monsterManager = {
             return;
         }
     
-        targetObject.npcProperty.hp -= 10;
-        if(targetObject.npcProperty.hp > 0) {
-            const hpPercentage = targetObject.npcProperty.hp / targetObject.npcProperty.hpMax;
-            if (hpPercentage < 0.3) {
-                targetObject.npcProperty.hpColor = 0xff0000;
-            } else if (hpPercentage < 0.7) {
-                targetObject.npcProperty.hpColor = 0xffa500;
-            }
-            targetObject.sendUpdated();
+        this.applyDamage(targetObject, 15);
+
+        if (targetObject.npcProperty.hp > 0) {
+            this.updateMonsterStatus(targetObject);
         } else {
-            sender.sendMessage( `${targetObject.npcProperty.name}을 처치하였습니다!`, _colors.RED);
-            sender.sendMessage( `${environmentManager.metrics.carbonEmission.toFixed(2)}톤 만큼 차감 되었습니다.`, _colors.MAGENTA);
-            sender.sendMessage( `$${environmentManager.metrics.carbonEmission.toFixed(2)}원 만큼 획득 하였습니다.`, _colors.DARK_GREEN);
-            sender.playSound("death.wav");
-            ScriptMap.putObjectWithKey(targetObject.tileX, targetObject.tileY, null, { key: key })
+            this.handleMonsterDefeat(sender, targetObject, key);
         }
-    }
+    },
+
+    applyDamage: function(monster: any, damage: number): void {
+        monster.npcProperty.hp -= damage;
+    },
+
+    updateMonsterStatus: function(monster: any): void {
+        const hpPercentage = monster.npcProperty.hp / monster.npcProperty.hpMax;
+        
+        if (hpPercentage < 0.3) {
+            monster.npcProperty.hpColor = _colors.RED;
+        } else if (hpPercentage < 0.7) {
+            monster.npcProperty.hpColor = _colors.ORANGE;
+        }
+        monster.sendUpdated();
+    },
+
+    handleMonsterDefeat: function(sender: ScriptPlayer, monster: any, key: string): void {
+        this.processVictory(sender, monster);
+        this.giveReward(sender);
+        this.removeMonster(monster, key);
+    },
+
+    processVictory: function(sender: ScriptPlayer, monster: any): void {
+        const carbonReduction = 0.05 + Math.random() * 0.1;
+        const recyclingIncrease = 0.001 + Math.random() * 0.01;
+
+        // 탄소 배출량 감축 및 재활용률 증가
+        environmentManager.metrics.carbonEmission -= carbonReduction;
+        environmentManager.metrics.recyclingRate += recyclingIncrease;
+
+        // 결과 메시지 전송
+        sender.sendMessage(`${monster.npcProperty.name}을 처치하였습니다!`, _colors.RED);
+        sender.sendMessage(`탄소배출량이 ${carbonReduction.toFixed(3)}톤 만큼 감축되었습니다.`, _colors.MAGENTA);
+        sender.sendMessage(`재활용률이 ${recyclingIncrease.toFixed(3)}% 만큼 증가하였습니다.`, _colors.MAGENTA);
+        sender.playSound("death.wav");
+    },
+
+    giveReward: function(sender: ScriptPlayer): void {
+        const moneyEarned = 0.3 + Math.random() * 0.5;
+        const newBalance = playerManager.addMoney(sender, moneyEarned);
+        sender.sendMessage(`$${moneyEarned.toFixed(2)}원 만큼 획득하였습니다. (현재 잔액: $${newBalance.toFixed(2)})`, _colors.DARK_GREEN);
+    },
+
+    removeMonster: function(monster: any, key: string): void {
+        ScriptMap.putObjectWithKey(monster.tileX, monster.tileY, null, { key: key });
+    },
 
 }
 // 사이드바 앱이 터치(클릭)되었을 때 동작하는 함수
