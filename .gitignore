@@ -43,3 +43,6 @@ out/
 
 # Zep specific
 .zep-cache/
+
+# zep archive file
+EcoCity.zepapp.zip
