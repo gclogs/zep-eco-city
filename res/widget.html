@@ -28,18 +28,21 @@
         .container {
             height: 100vh;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            justify-content: flex-start;
+            align-items: flex-start;
+            padding: 20px;
         }
         .content {
             display: flex;
             min-height: 200px;
-            justify-content: center;
+            justify-content: flex-start;
             align-items: center;
             background-color: beige;
             margin-top: 10px;
             margin-bottom: 10px;
             border-radius: 7px;
+            padding: 10px;
+            text-indent: 0;
         }
 
         hr {
@@ -82,16 +85,8 @@
         .img_20 {
             width: 20%;
         }
-        .metrics {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
         .metric-item {
-            margin-bottom: 20px;
-        }
-        .metric-item h3 {
-            margin-bottom: 10px;
+            margin-bottom: 4px;
         }
     </style>
     <title>Document</title>
@@ -106,20 +101,14 @@
             <hr />
             <div class="metrics">
                 <div class="metric-item">
-                    <h3>공기 오염도</h3>
-                    <span id="airPollution">0 PPM</span>
+                    <strong>공기 오염도</strong> <span id="airPollution">0 PPM</span>
                 </div>
                 <div class="metric-item">
-                    <h3>탄소 배출량</h3>
-                    <span id="carbonEmission">0 톤</span>
+                    <strong>탄소 배출량</strong> <span id="carbonEmission">0 톤</span>
                 </div>
                 <div class="metric-item">
-                    <h3>재활용률</h3>
-                    <span id="recyclingRate">0 %</span>
+                    <strong>재활용률</strong> <span id="recyclingRate">0 %</span>
                 </div>
-            </div>
-            <div class="footer">
-                <span id="text">Sample-Widget</span>
             </div>
         </div>
     </div>
@@ -131,11 +120,11 @@
         window.addEventListener("message", function (e) {
             if (e.data.type === "update_metrics") {
                 document.getElementById("airPollution").textContent = 
-                    e.data.data.airPollution.toFixed(1) + " PPM";
+                    e.data.data.airPollution.toFixed(3) + " PPM";
                 document.getElementById("carbonEmission").textContent = 
-                    e.data.data.carbonEmission.toFixed(2) + " 톤";
+                    e.data.data.carbonEmission.toFixed(3) + " 톤";
                 document.getElementById("recyclingRate").textContent = 
-                    e.data.data.recyclingRate.toFixed(1) + "%";
+                    e.data.data.recyclingRate.toFixed(3) + "%";
             }
         });
     </script>

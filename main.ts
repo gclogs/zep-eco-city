@@ -475,7 +475,7 @@ ScriptApp.onJoinPlayer.Add(function(player: ScriptPlayer) {
     playerManager.initPlayer(player);
     
     // 환경 지표 위젯 생성
-    const widget = player.showWidget("widget.html", "top", 300, 200);
+    const widget = player.showWidget("widget.html", "topleft", 300, 150);
     environmentManager.setWidget(widget);
 });
 
