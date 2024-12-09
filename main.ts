@@ -39,6 +39,11 @@ let _stateTimer = 0;
 let _transformCount = 0;
 let _answerCount = 0;
 
+const _maps = {
+    UNIVERSITY: "r7LY4M",
+    CLASSROOM: "Wa376G",
+}
+
 // 기본 색상들
 const _colors = {
     RED:        0xff0000,     // 빨간색
@@ -318,52 +323,63 @@ const monsterManager = {
 
 
     createMonster: function(minHp: number = 100, maxHp: number = 100) {
-        let randomX: number, randomY: number;
-        let isValidPosition = false;
+        const mapWidth = ScriptMap.width;
+        const mapHeight = ScriptMap.height;
         
-        // 랜덤 위치 찾기 (최대 100회 시도)
-        for (let attempt = 0; attempt < 100; attempt++) {
-            // (12,8) ~ (74,47) 사이의 랜덤 좌표 생성
-            randomX = Math.floor(Math.random() * (74 - 12 + 1)) + 12;
-            randomY = Math.floor(Math.random() * (47 - 8 + 1)) + 8;
+        // 맵 크기에 따른 최적의 시도 횟수 계산
+        const maxAttempts = Math.min(mapWidth * mapHeight / 4, 200);
+        let randomX: number;
+        let randomY: number;
+        
+        // 효율적인 위치 검색
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            // 맵의 4분면을 번갈아가며 검색
+            const quadrant = attempt % 4;
+            const halfWidth = Math.floor(mapWidth / 2);
+            const halfHeight = Math.floor(mapHeight / 2);
             
-            // 해당 위치의 타일 효과 확인 (2번은 IMPASSABLE 타입)
-            const tileEffect = ScriptMap.getTile(2, randomX, randomY);
-            
-            // IMPASSABLE 타일인 경우 생성 안 함
-            if (tileEffect === TileEffectType.IMPASSABLE) {
-                continue;
+            switch(quadrant) {
+                case 0: // 좌상단
+                    randomX = Math.floor(Math.random() * halfWidth);
+                    randomY = Math.floor(Math.random() * halfHeight);
+                    break;
+                case 1: // 우상단
+                    randomX = halfWidth + Math.floor(Math.random() * (mapWidth - halfWidth));
+                    randomY = Math.floor(Math.random() * halfHeight);
+                    break;
+                case 2: // 좌하단
+                    randomX = Math.floor(Math.random() * halfWidth);
+                    randomY = halfHeight + Math.floor(Math.random() * (mapHeight - halfHeight));
+                    break;
+                case 3: // 우하단
+                    randomX = halfWidth + Math.floor(Math.random() * (mapWidth - halfWidth));
+                    randomY = halfHeight + Math.floor(Math.random() * (mapHeight - halfHeight));
+                    break;
             }
             
-            isValidPosition = true;
-            break;
+            if (ScriptMap.getTile(2, randomX, randomY) !== TileEffectType.IMPASSABLE) {
+                const objectKey = `Monster_${randomX}_${randomY}`;
+                
+                const monsterObject = ScriptMap.putObjectWithKey(randomX, randomY, this.monster, {
+                    npcProperty: { 
+                        name: `쓰레기 빌런 ${Math.floor(Math.random() * 100) + 1}`, 
+                        hpColor: 0x03ff03, 
+                        hp: minHp, 
+                        hpMax: maxHp
+                    },
+                    overlap: true,
+                    collide: true,
+                    movespeed: 100, 
+                    key: objectKey,
+                    useDirAnim: true
+                });
+    
+                ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
+                return;
+            }
         }
         
-        // 유효한 위치를 찾지 못한 경우
-        if (!isValidPosition) {
-            ScriptApp.sayToStaffs("적절한 위치를 찾을 수 없습니다.");
-            return;
-        }
-        
-        const objectKey = `Monster_${randomX}_${randomY}`; // 고유한 키 생성
-        
-        ScriptApp.sayToStaffs(`몬스터 생성 위치: (${randomX}, ${randomY})`);
-        
-        const monsterObject = ScriptMap.putObjectWithKey(randomX, randomY, this.monster, {
-            npcProperty: { 
-                name: `쓰레기 빌런 ${Math.floor(Math.random() * 100) + 1}`, 
-                hpColor: 0x03ff03, 
-                hp: minHp, 
-                hpMax: maxHp
-            },
-            overlap: true,
-            collide: true, // ★
-            movespeed: 100, 
-            key: objectKey,
-            useDirAnim: true
-        });
-
-        ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
+        ScriptApp.sayToStaffs("적절한 위치를 찾을 수 없습니다.");
     },
 
     respawnMonster: function(dt: number) {
@@ -473,6 +489,8 @@ ScriptApp.onJoinPlayer.Add(function(player: ScriptPlayer) {
         widget: null,
     };
     playerManager.initPlayer(player);
+    ScriptApp.sayToStaffs(`현재 맵 HashID: ${ScriptApp.mapHashID}`);
+    ScriptApp.sayToStaffs(`현재 맵 너비/높이: ${ScriptMap.width}x${ScriptMap.height}`);
     
     // 환경 지표 위젯 생성
     const widget = player.showWidget("widget.html", "topleft", 300, 150);
@@ -493,7 +511,10 @@ ScriptApp.addOnKeyDown(82, function (player) {
 ScriptApp.onUpdate.Add(function(dt) {
     environmentManager.updateEnvironmentByMovement(dt);
     environmentManager.saveMetrics(dt); // 저장 로직 추가
-    monsterManager.respawnMonster(dt);
+
+    if(ScriptApp.mapHashID == _maps.CLASSROOM) { // 교실에서만 몬스터 생성
+        monsterManager.respawnMonster(dt);
+    }
 });
 
 // 쓰레기 몬스터 처치 이벤트
@@ -501,12 +522,11 @@ ScriptApp.onAppObjectAttacked.Add(function (sender: ScriptPlayer, x: number, y: 
     monsterManager.handleObjectAttack(sender, key);
 });
 
+// 쓰레기 분리수거 이벤트
 ScriptApp.onObjectTouched.Add(function (sender: ScriptPlayer, x: number, y: number, tileID: number, obj: ScriptObject) {
-    if(obj.text == 1) {
-        ScriptApp.showCenterLabel("맞습니다")
+    if(ScriptApp.mapHashID == _maps.UNIVERSITY) { // 캠퍼스에서만 쓰레기 생성
+        ScriptApp.sayToStaffs("캠퍼스입니다.");
     }
-    
-    ScriptApp.sayToStaffs(`${sender.name} (${sender.id}) touched (ID: ${obj.text}) (Value: ${obj.param1})`);
 });
 
 // 초기화
