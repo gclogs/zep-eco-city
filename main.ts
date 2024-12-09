@@ -6,21 +6,106 @@ import { Script } from "vm";
 import "zep-script";
 import { ObjectEffectType, ScriptPlayer, TileEffectType } from "zep-script";
 
-// 환경 지표 인터페이스 정의
+/**
+ * 환경 지표의 범위를 정의하는 상수
+ */
+const ENV_CONSTRAINTS = {
+    AIR_POLLUTION: { MIN: 0, MAX: 100 },
+    CARBON_EMISSION: { MIN: 0 },
+    RECYCLING_RATE: { MIN: 0, MAX: 100 }
+} as const;
+
+/**
+ * 이동 모드 열거형
+ */
+enum MoveMode {
+    WALK = "WALK",
+    RUN = "RUN"
+}
+
+/**
+ * 환경 지표 관리를 위한 인터페이스
+ */
 interface EnvironmentMetrics {
-    airPollution: number;
-    carbonEmission: number;
-    recyclingRate: number;
-    lastCarbonThreshold: number;  // 마지막으로 체크한 탄소 배출량 임계값
-    installedProjects: {
-        solarPanels: number;
-        trees: number;
-        bikeLanes: number;
+    /** 
+     * 공기 오염도
+     * @minimum 0
+     * @maximum 100
+     * @default 0
+     * @unit percentage
+     */
+    readonly airPollution: number;
+
+    /** 
+     * 탄소 배출량
+     * @minimum 0
+     * @unit tons
+     * @default 0
+     * @precision 3
+     */
+    readonly carbonEmission: number;
+
+    /** 
+     * 재활용률
+     * @minimum 0
+     * @maximum 100
+     * @default 0
+     * @unit percentage
+     * @precision 2
+     */
+    readonly recyclingRate: number;
+
+    /** 
+     * 마지막으로 체크한 탄소 배출량 임계값
+     * @minimum 0
+     * @default 0
+     * @remarks 탄소 배출량이 특정 임계값을 넘을 때마다 공기 오염도 증가
+     */
+    readonly lastCarbonThreshold: number;
+
+    /** 
+     * 마지막 업데이트 시간
+     * @format Unix Timestamp (milliseconds)
+     */
+    readonly lastUpdateTime: number;
+}
+
+/**
+ * 플레이어 통계 인터페이스
+ */
+interface PlayerStats {
+    readonly money: number;
+    readonly kills: number;
+    readonly quizzes: number;
+}
+
+/**
+ * 플레이어 설정 인터페이스
+ */
+interface PlayerSettings {
+    moveMode: MoveMode;
+}
+
+/**
+ * 플레이어 데이터 스키마 인터페이스
+ */
+interface PlayerDataSchema {
+    readonly version: number;
+    readonly data: {
+        readonly uid: string;
+        stats: PlayerStats;
+        settings: PlayerSettings;
+        readonly timestamp: number;
     };
 }
-// 저장소 데이터 인터페이스 정의
-interface StorageData {
-    environmentMetrics?: EnvironmentMetrics;
+
+/**
+ * 게임 저장소 인터페이스
+ */
+interface GameStorage {
+    readonly environmentMetrics: EnvironmentMetrics;
+    readonly playerData: Map<string, PlayerDataSchema>;
+    readonly version: number;
 }
 
 class ScriptObject {
@@ -71,244 +156,297 @@ const _colors = {
     BROWN:      0xa52a2a,     // 갈색
 }
 
-// 환경 관리자
-const environmentManager = {
-    displays: {
-        widgets: new Set()  // 모든 플레이어의 위젯을 저장
-    },
+// 환경 관리자 클래스
+class EnvironmentManager {
+    private static instance: EnvironmentManager;
+    private displays: Set<any> = new Set();
+    private metrics: EnvironmentMetrics;
+    private updateTimer: number = 0;
+    private saveTimer: number = 0;
+    private readonly SAVE_INTERVAL: number = 500;
+    private readonly UPDATE_INTERVAL: number = 1000;
 
-    metrics: {
-        airPollution: 0,
-        carbonEmission: 0,
-        recyclingRate: 0,
-        lastCarbonThreshold: 0,
-        installedProjects: {
-            solarPanels: 0,
-            trees: 0,
-            bikeLanes: 0
+    private constructor() {
+        this.metrics = {
+            airPollution: 0,
+            carbonEmission: 0,
+            recyclingRate: 0,
+            lastCarbonThreshold: 0,
+            lastUpdateTime: Date.now()
+        };
+        this.loadMetrics();
+    }
+
+    public static getInstance(): EnvironmentManager {
+        if (!EnvironmentManager.instance) {
+            EnvironmentManager.instance = new EnvironmentManager();
         }
-    } as EnvironmentMetrics,
+        return EnvironmentManager.instance;
+    }
 
-    updateTimer: 0,
-    saveTimer: 0,
-    SAVE_INTERVAL: 500,
-
-    // 초기화 시 저장된 데이터 로드
-    initialize: function() {
+    private loadMetrics(): void {
         try {
             ScriptApp.getStorage((storageStr: string) => {
-                const storage: StorageData = storageStr ? JSON.parse(storageStr) : {};
-                if (storage?.environmentMetrics) {
+                const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
+                if (storage.environmentMetrics) {
                     this.metrics = {
-                        ...this.metrics,
-                        ...storage.environmentMetrics
+                        ...storage.environmentMetrics,
+                        lastUpdateTime: Date.now()
                     };
-                    this.updateDisplays();
                 }
+                this.updateDisplays();
             });
         } catch (error) {
-            ScriptApp.sayToStaffs("환경 지표 로드 중 오류 발생:", error);
+            this.logError('LOAD_FAILED', error);
         }
-    },
+    }
 
-    // 최적화된 저장 함수
-    saveMetrics: function(dt) {
+    public saveMetrics(dt: number): void {
         this.saveTimer += dt;
-        
-        if (this.saveTimer >= this.SAVE_INTERVAL) {
+        if (this.saveTimer < this.SAVE_INTERVAL) return;
+
+        try {
+            ScriptApp.getStorage((storageStr: string) => {
+                const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
+                storage.environmentMetrics = { ...this.metrics };
+                ScriptApp.setStorage(JSON.stringify(storage));
+                this.logEvent('METRICS_SAVED', this.metrics);
+            });
+        } catch (error) {
+            this.logError('SAVE_FAILED', error);
+        } finally {
             this.saveTimer = 0;
-            
-            try {
-                const metricsToSave: EnvironmentMetrics = {
-                    airPollution: Math.round(this.metrics.airPollution * 100) / 100,
-                    carbonEmission: Math.round(this.metrics.carbonEmission * 100) / 100,
-                    recyclingRate: Math.round(this.metrics.recyclingRate * 100) / 100,
-                    lastCarbonThreshold: this.metrics.lastCarbonThreshold,
-                    installedProjects: this.metrics.installedProjects
-                };
-                
-                ScriptApp.getStorage((storageStr: string) => {
-                    const storage: StorageData = storageStr ? JSON.parse(storageStr) : {};
-                    const updatedStorage: StorageData = {
-                        ...storage,
-                        environmentMetrics: metricsToSave
-                    };
-                    ScriptApp.setStorage(JSON.stringify(updatedStorage));
-                    ScriptApp.sayToStaffs("환경 지표 저장 완료");
-                });
-            } catch (error) {
-                ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", error);
-            }
         }
-    },
+    }
 
-    // 위젯 설정
-    setWidget: function(widget) {
-        this.displays.widgets.add(widget);
+    public setWidget(widget: any): void {
+        if (!widget) return;
+        this.displays.add(widget);
         this.updateDisplays();
-        
-        // 위젯 메시지 이벤트 핸들러 설정
-        widget.onMessage.Add((player, data) => {
-            if (data.type === "close") {
-                this.displays.widgets.delete(widget);
-                widget.destroy();
-            }
-        });
-    },
+    }
 
-    // 주기적인 환경 지표 업데이트
-    updateEnvironmentByMovement: function(dt) {
+    public updateEnvironmentByMovement(dt: number): void {
         this.updateTimer += dt;
-        
-        // dt가 0.02초이므로, (0.02ms × 50 = 1s)
-        if (this.updateTimer >= 1) {
-            this.updateTimer = 0;
-            
-            // 모든 플레이어의 현재 이동 모드에 따라 환경 지표 업데이트
-            for (const playerId in playerManager.players) {
-                const playerData = playerManager.players[playerId];
-                this.updateMetrics({
-                    carbonEmission: playerData.mode.carbonEmission
-                });
+        if (this.updateTimer < this.UPDATE_INTERVAL) return;
+
+        const carbonIncrease = this.calculateCarbonIncrease();
+        this.updateMetrics({
+            ...this.metrics,
+            carbonEmission: this.metrics.carbonEmission + carbonIncrease,
+            lastUpdateTime: Date.now()
+        });
+
+        this.updateTimer = 0;
+    }
+
+    private calculateCarbonIncrease(): number {
+        // 탄소 증가량 계산 로직
+        return 0.1; // 임시 값
+    }
+
+    public updateMetrics(newMetrics: Partial<EnvironmentMetrics>): void {
+        this.metrics = {
+            ...this.metrics,
+            ...newMetrics,
+            airPollution: Math.max(ENV_CONSTRAINTS.AIR_POLLUTION.MIN,
+                Math.min(ENV_CONSTRAINTS.AIR_POLLUTION.MAX, newMetrics.airPollution ?? this.metrics.airPollution)),
+            carbonEmission: Math.max(ENV_CONSTRAINTS.CARBON_EMISSION.MIN, 
+                newMetrics.carbonEmission ?? this.metrics.carbonEmission),
+            recyclingRate: Math.max(ENV_CONSTRAINTS.RECYCLING_RATE.MIN,
+                Math.min(ENV_CONSTRAINTS.RECYCLING_RATE.MAX, newMetrics.recyclingRate ?? this.metrics.recyclingRate))
+        };
+        this.updateDisplays();
+    }
+
+    private updateDisplays(): void {
+        const displayData = {
+            airPollution: Math.round(this.metrics.airPollution),
+            carbonEmission: this.metrics.carbonEmission.toFixed(3),
+            recyclingRate: this.metrics.recyclingRate.toFixed(2)
+        };
+
+        this.displays.forEach(widget => {
+            widget.sendMessage("updateEnvironment", displayData);
+        });
+    }
+
+    private logEvent(type: string, data: any): void {
+        ScriptApp.sayToStaffs(`[${type}] ${JSON.stringify(data)}`);
+    }
+
+    private logError(type: string, error: any): void {
+        ScriptApp.sayToStaffs(`[ERROR:${type}] ${error.message || JSON.stringify(error)}`);
+    }
+}
+
+// 환경 관리자 인스턴스 생성
+const environmentManager = EnvironmentManager.getInstance();
+
+// 플레이어 관리자 클래스
+class PlayerManager {
+    private static instance: PlayerManager;
+    private readonly VERSION: number = 1;
+    private players: Map<string, PlayerDataSchema> = new Map();
+    private saveTimer: number = 0;
+    private readonly saveInterval: number = 5000;
+
+    private readonly moveTypes = {
+        [MoveMode.WALK]: { speed: 80, title: "🚶🏻 걷기 모드", emission: 0.001 },
+        [MoveMode.RUN]: { speed: 150, title: "🏃🏻 달리기 모드", emission: 0.003 }
+    } as const;
+
+    private cache = {
+        ttl: 300000, // 5분
+        items: new Map<string, PlayerDataSchema>()
+    };
+
+    private constructor() {}
+
+    public static getInstance(): PlayerManager {
+        if (!PlayerManager.instance) {
+            PlayerManager.instance = new PlayerManager();
+        }
+        return PlayerManager.instance;
+    }
+
+    private createDefaultData(playerId: string): PlayerDataSchema {
+        return {
+            version: this.VERSION,
+            data: {
+                uid: playerId,
+                stats: {
+                    money: 0,
+                    kills: 0,
+                    quizzes: 0
+                },
+                settings: {
+                    moveMode: MoveMode.WALK
+                },
+                timestamp: Date.now()
             }
-        }
-    },
+        };
+    }
 
-    // 환경 지표 업데이트
-    updateMetrics: function(metrics) {
-        let hasChanges = false;
-        
-        if (metrics.carbonEmission !== undefined) {
-            const randomFactor = 0.25 + Math.random() * 1.0; // 0.25 ~ 1.25 사이의 랜덤 값
-            const newValue = Math.max(
-                0, 
-                this.metrics.carbonEmission + (metrics.carbonEmission * randomFactor)
-            );
-            if (newValue !== this.metrics.carbonEmission) {
-                this.metrics.carbonEmission = newValue;
-                hasChanges = true;
-                
-                // 탄소 배출량이 1 단위로 증가할 때마다 공기 오염도 증가
-                const currentThreshold = Math.floor(newValue / 1) * 1;
-                if (currentThreshold > this.metrics.lastCarbonThreshold) {
-                    const airPollutionFactor = 0.25 + Math.random() * 1.75; // 0.25 ~ 2.0 사이의 랜덤 값
-                    this.metrics.airPollution += airPollutionFactor;
-                    this.metrics.lastCarbonThreshold = currentThreshold;
-                    ScriptApp.sayToStaffs(`Air pollution increased by factor ${airPollutionFactor.toFixed(2)} due to carbon threshold ${currentThreshold}`);
-                }
-                
-                // ScriptApp.sayToStaffs(`Carbon emission updated to: ${newValue} (Random factor: ${randomFactor.toFixed(2)})`);
+    public async initPlayer(player: ScriptPlayer): Promise<void> {
+        if (this.players.has(player.id)) return;
+
+        try {
+            const cachedData = this.cache.items.get(player.id);
+            if (cachedData) {
+                this.players.set(player.id, cachedData);
+                this.applyPlayerData(player, cachedData);
+                return;
             }
-        }
-        
-        if (metrics.airPollution !== undefined && metrics.airPollution !== this.metrics.airPollution) {
-            this.metrics.airPollution = metrics.airPollution;
-            hasChanges = true;
-        }
-        if (metrics.recyclingRate !== undefined && metrics.recyclingRate !== this.metrics.recyclingRate) {
-            this.metrics.recyclingRate = metrics.recyclingRate;
-            hasChanges = true;
-        }
 
-        if (hasChanges) {
-            this.updateDisplays();
+            const data = await this.loadPlayerData(player.id);
+            if (data) {
+                const validData = this.validateAndMigrateData(data);
+                this.players.set(player.id, validData);
+                this.cache.items.set(player.id, validData);
+                this.applyPlayerData(player, validData);
+            } else {
+                const defaultData = this.createDefaultData(player.id);
+                this.players.set(player.id, defaultData);
+                this.cache.items.set(player.id, defaultData);
+                this.applyPlayerData(player, defaultData);
+            }
+        } catch (error) {
+            this.logError('INIT_PLAYER_FAILED', { playerId: player.id, error });
+            const fallbackData = this.createDefaultData(player.id);
+            this.players.set(player.id, fallbackData);
+            this.applyPlayerData(player, fallbackData);
         }
-    },
+    }
 
-    // 디스플레이 업데이트
-    updateDisplays: function() {
-        // 모든 플레이어의 위젯 업데이트
-        for (const widget of this.displays.widgets) {
-            widget.sendMessage({
-                type: "update_metrics",
-                data: {
-                    airPollution: this.metrics.airPollution,
-                    carbonEmission: this.metrics.carbonEmission,
-                    recyclingRate: this.metrics.recyclingRate,
-                    installedProjects: this.metrics.installedProjects
+    private async loadPlayerData(playerId: string): Promise<PlayerDataSchema | null> {
+        return new Promise((resolve) => {
+            ScriptApp.getStorage((storageStr: string) => {
+                try {
+                    const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
+                    resolve(storage.playerData?.get(playerId) || null);
+                } catch (error) {
+                    this.logError('LOAD_PLAYER_DATA_FAILED', { playerId, error });
+                    resolve(null);
                 }
             });
-        }
+        });
     }
-};
 
-// 플레이어 관리자
-const playerManager = {
-    players: {},
-
-    // 이동 모드 정의
-    WALKING: {
-        speed: 80,
-        title: "🚶🏻 걷기 모드",
-        carbonEmission: 0.001  // 걷기 모드시 0.01톤 증가
-    },
-    RUNNING: {
-        speed: 100,
-        title: "👟 달리기 모드",
-        carbonEmission: 0.02   // 달리기 모드시 0.05톤 증가
-    },
-
-    // 플레이어 초기화
-    initPlayer: function(player) {
-        if (player.id in this.players) return;
-
-        ScriptApp.sayToStaffs(`플레이어 초기화: ${player.name} (ID: ${player.id})`);
-        this.players[player.id] = {
-            id: player.id,
-            name: player.name,
-            money: 0,  // 초기 돈을 0으로 설정
-            mode: this.WALKING
-        };
-        
-        player.moveSpeed = this.WALKING.speed;
-        player.title = this.WALKING.title;
-        player.sendUpdated();
-    },
-
-    // 플레이어 제거
-    removePlayer: function(player) {
-        ScriptApp.sayToStaffs(`플레이어 제거: ${player.name} (ID: ${player.id})`);
-        delete this.players[player.id];
-    },
-
-    addMoney: function(player, amount) {
-        if (!this.players[player.id]) {
-            this.initPlayer(player);
+    private validateAndMigrateData(data: any): PlayerDataSchema {
+        if (!data || data.version !== this.VERSION) {
+            return this.migrateData(data);
         }
-        this.players[player.id].money += amount;
-        return this.players[player.id].money;
-    },
+        return data;
+    }
 
-    subtractMoney: function(player, amount) {
-        if (!this.players[player.id]) {
-            this.initPlayer(player);
+    private migrateData(oldData: any): PlayerDataSchema {
+        const newData = this.createDefaultData(oldData?.data?.uid || 'unknown');
+        if (oldData?.data) {
+            newData.data.stats = {
+                ...newData.data.stats,
+                ...oldData.data.stats
+            };
+            newData.data.settings = {
+                ...newData.data.settings,
+                ...oldData.data.settings
+            };
         }
-        this.players[player.id].money -= amount;
-        return this.players[player.id].money;
-    },
+        return newData;
+    }
 
-    // 이동 모드 전환
-    toggleMovementMode: function(player) {
-        const playerData = this.players[player.id];
-        if (!playerData) {
-            ScriptApp.sayToStaffs(`플레이어 데이터 없음: ${player.name} (ID: ${player.id})`);
-            return;
-        }
-
-        const newMode = 
-            playerData.mode === this.WALKING 
-                ? this.RUNNING 
-                : this.WALKING;
-        
-        playerData.mode = newMode;
-        player.moveSpeed = newMode.speed;
-        player.title = newMode.title;
-
-        player.showCenterLabel(`${newMode.title}로 변경되었습니다!`);
-        ScriptApp.sayToStaffs(`이동 모드 변경: ${player.name} (ID: ${player.id}) -> ${newMode.title}`);
+    private applyPlayerData(player: ScriptPlayer, data: PlayerDataSchema): void {
+        const moveConfig = this.moveTypes[data.data.settings.moveMode];
+        player.moveSpeed = moveConfig.speed;
+        player.sendMessage(`${moveConfig.title} 적용됨`, _colors.GREEN);
         player.sendUpdated();
     }
-};
+
+    public savePlayerData(dt: number): void {
+        this.saveTimer += dt;
+        if (this.saveTimer < this.saveInterval) return;
+
+        this.saveTimer = 0;
+        this.performSave();
+    }
+
+    private async performSave(): Promise<void> {
+        if (this.players.size === 0) return;
+
+        try {
+            const playersData = new Map([...this.players.entries()].map(([id, data]) => [
+                id,
+                {
+                    ...data,
+                    data: {
+                        ...data.data,
+                        timestamp: Date.now()
+                    }
+                }
+            ]));
+
+            ScriptApp.getStorage((storageStr: string) => {
+                const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
+                storage.playerData = playersData;
+                storage.version = this.VERSION;
+                ScriptApp.setStorage(JSON.stringify(storage));
+                this.logEvent('PLAYERS_SAVED', { count: playersData.size });
+            });
+        } catch (error) {
+            this.logError('SAVE_FAILED', error);
+        }
+    }
+
+    private logEvent(type: string, data: any): void {
+        ScriptApp.sayToStaffs(`[${type}] ${JSON.stringify(data)}`);
+    }
+
+    private logError(type: string, error: any): void {
+        ScriptApp.sayToStaffs(`[ERROR:${type}] ${error.message || JSON.stringify(error)}`);
+    }
+}
+
+// 플레이어 관리자 인스턴스 생성
+const playerManager = PlayerManager.getInstance();
 
 const monsterManager = {
     respawnTimer: 0,
@@ -373,7 +511,8 @@ const monsterManager = {
                     key: objectKey,
                     useDirAnim: true
                 });
-    
+
+                ScriptApp.sayToStaffs(`몬스터 생성: ${objectKey} (위치: ${randomX}, ${randomY})`);
                 ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
                 return;
             }
@@ -445,8 +584,10 @@ const monsterManager = {
         const recyclingIncrease = 0.001 + Math.random() * 0.01;
 
         // 탄소 배출량 감축 및 재활용률 증가
-        environmentManager.metrics.carbonEmission -= carbonReduction;
-        environmentManager.metrics.recyclingRate += recyclingIncrease;
+        environmentManager.updateMetrics({
+            carbonEmission: environmentManager.metrics.carbonEmission - carbonReduction,
+            recyclingRate: environmentManager.metrics.recyclingRate + recyclingIncrease
+        });
 
         // 결과 메시지 전송
         sender.sendMessage(`${monster.npcProperty.name}을 처치하였습니다!`, _colors.RED);
@@ -464,8 +605,8 @@ const monsterManager = {
     removeMonster: function(monster: any, key: string): void {
         ScriptMap.putObjectWithKey(monster.tileX, monster.tileY, null, { key: key });
     },
-
 }
+
 // 사이드바 앱이 터치(클릭)되었을 때 동작하는 함수
 ScriptApp.onSidebarTouched.Add(function (player: ScriptPlayer) {
     const widget = player.showWidget("widget.html", "sidebar", 350, 350);
@@ -531,5 +672,5 @@ ScriptApp.onObjectTouched.Add(function (sender: ScriptPlayer, x: number, y: numb
 
 // 초기화
 ScriptApp.onInit.Add(function() {
-    environmentManager.initialize();
+    environmentManager.loadMetrics();
 });
