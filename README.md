@@ -33,6 +33,7 @@
 <img src="https://img.shields.io/badge/Visual Studio Code-007ACC?style=flat-square&logo=visual-studio-code&logoColor=white"/>
 
 API를 잘 활용하기 위해 `Javascript` 기반으로 되어 있는 `ZepScript`를 `Typescript`로 개발하였습니다.
+현재 프로젝트는 ES5 버전을 사용하고 있습니다.
 
 ## ⚖️ 라이선스
 이 프로젝트는 MIT 라이선스에 따라 라이센스가 부여됩니다. 자세한 내용은 아래를 참고하세요.

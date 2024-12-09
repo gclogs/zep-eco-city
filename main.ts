@@ -24,6 +24,26 @@ enum MoveMode {
 }
 
 /**
+ * 에러 타입 열거형
+ */
+enum ErrorType {
+    LOAD_FAILED = 'LOAD_FAILED',
+    SAVE_FAILED = 'SAVE_FAILED',
+    INIT_PLAYER_FAILED = 'INIT_PLAYER_FAILED',
+    LOAD_PLAYER_DATA_FAILED = 'LOAD_PLAYER_DATA_FAILED',
+    UPDATE_FAILED = 'UPDATE_FAILED'
+}
+
+/**
+ * 이벤트 타입 열거형
+ */
+enum EventType {
+    METRICS_SAVED = 'METRICS_SAVED',
+    PLAYERS_SAVED = 'PLAYERS_SAVED',
+    PLAYER_UPDATED = 'PLAYER_UPDATED'
+}
+
+/**
  * 환경 지표 관리를 위한 인터페이스
  */
 interface EnvironmentMetrics {
@@ -103,15 +123,15 @@ interface PlayerDataSchema {
  * 게임 저장소 인터페이스
  */
 interface GameStorage {
-    readonly environmentMetrics: EnvironmentMetrics;
-    readonly playerData: Map<string, PlayerDataSchema>;
-    readonly version: number;
+    environmentMetrics: EnvironmentMetrics;
+    playerData: Map<string, PlayerDataSchema>;
+    version: number;
 }
 
 class ScriptObject {
-    text: number;               // 객체의 id
-    param1: string;            // 객체의 value
-    type: ObjectEffectType;    // 객체의 타입
+    private text: number;               // 객체의 id
+    private param1: string;            // 객체의 value
+    private type: ObjectEffectType;    // 객체의 타입
 };
 
 const STATE_INIT = 3000;
@@ -184,7 +204,7 @@ class EnvironmentManager {
         return EnvironmentManager.instance;
     }
 
-    private loadMetrics(): void {
+    public loadMetrics(): void {
         try {
             ScriptApp.getStorage((storageStr: string) => {
                 const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
@@ -197,7 +217,7 @@ class EnvironmentManager {
                 this.updateDisplays();
             });
         } catch (error) {
-            this.logError('LOAD_FAILED', error);
+            ScriptApp.sayToStaffs(`[ERROR:${ErrorType.LOAD_FAILED}] ${error.message || JSON.stringify(error)}`);
         }
     }
 
@@ -208,12 +228,16 @@ class EnvironmentManager {
         try {
             ScriptApp.getStorage((storageStr: string) => {
                 const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
-                storage.environmentMetrics = { ...this.metrics };
-                ScriptApp.setStorage(JSON.stringify(storage));
-                this.logEvent('METRICS_SAVED', this.metrics);
+                const newStorage: GameStorage = {
+                    environmentMetrics: { ...this.metrics },
+                    playerData: storage.playerData || new Map(),
+                    version: storage.version || 1
+                };
+                ScriptApp.setStorage(JSON.stringify(newStorage));
+                ScriptApp.sayToStaffs(`[${EventType.METRICS_SAVED}] ${JSON.stringify(this.metrics)}`);
             });
         } catch (error) {
-            this.logError('SAVE_FAILED', error);
+            ScriptApp.sayToStaffs(`[ERROR:${ErrorType.SAVE_FAILED}] ${error.message || JSON.stringify(error)}`);
         } finally {
             this.saveTimer = 0;
         }
@@ -258,6 +282,10 @@ class EnvironmentManager {
         this.updateDisplays();
     }
 
+    public getMetrics(): Readonly<EnvironmentMetrics> {
+        return { ...this.metrics };
+    }
+
     private updateDisplays(): void {
         const displayData = {
             airPollution: Math.round(this.metrics.airPollution),
@@ -290,13 +318,13 @@ class PlayerManager {
     private saveTimer: number = 0;
     private readonly saveInterval: number = 5000;
 
-    private readonly moveTypes = {
+    public readonly moveTypes = {
         [MoveMode.WALK]: { speed: 80, title: "🚶🏻 걷기 모드", emission: 0.001 },
         [MoveMode.RUN]: { speed: 150, title: "🏃🏻 달리기 모드", emission: 0.003 }
     } as const;
 
     private cache = {
-        ttl: 300000, // 5분
+        ttl: 50, // 5분
         items: new Map<string, PlayerDataSchema>()
     };
 
@@ -331,27 +359,17 @@ class PlayerManager {
         if (this.players.has(player.id)) return;
 
         try {
-            const cachedData = this.cache.items.get(player.id);
-            if (cachedData) {
-                this.players.set(player.id, cachedData);
-                this.applyPlayerData(player, cachedData);
-                return;
-            }
-
-            const data = await this.loadPlayerData(player.id);
-            if (data) {
-                const validData = this.validateAndMigrateData(data);
-                this.players.set(player.id, validData);
-                this.cache.items.set(player.id, validData);
-                this.applyPlayerData(player, validData);
+            const existingData = await this.loadPlayerData(player.id);
+            if (existingData) {
+                this.players.set(player.id, existingData);
+                this.applyPlayerData(player, existingData);
             } else {
                 const defaultData = this.createDefaultData(player.id);
                 this.players.set(player.id, defaultData);
-                this.cache.items.set(player.id, defaultData);
                 this.applyPlayerData(player, defaultData);
             }
         } catch (error) {
-            this.logError('INIT_PLAYER_FAILED', { playerId: player.id, error });
+            ScriptApp.sayToStaffs(`[ERROR:${ErrorType.INIT_PLAYER_FAILED}] ${error.message || JSON.stringify(error)}`);
             const fallbackData = this.createDefaultData(player.id);
             this.players.set(player.id, fallbackData);
             this.applyPlayerData(player, fallbackData);
@@ -365,7 +383,7 @@ class PlayerManager {
                     const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
                     resolve(storage.playerData?.get(playerId) || null);
                 } catch (error) {
-                    this.logError('LOAD_PLAYER_DATA_FAILED', { playerId, error });
+                    ScriptApp.sayToStaffs(`[ERROR:${ErrorType.LOAD_PLAYER_DATA_FAILED}] ${error.message || JSON.stringify(error)}`);
                     resolve(null);
                 }
             });
@@ -413,35 +431,58 @@ class PlayerManager {
         if (this.players.size === 0) return;
 
         try {
-            const playersData = new Map([...this.players.entries()].map(([id, data]) => [
-                id,
-                {
-                    ...data,
-                    data: {
-                        ...data.data,
-                        timestamp: Date.now()
+            const playersData = new Map(
+                Array.from(this.players.entries()).map(([id, data]) => [
+                    id,
+                    {
+                        ...data,
+                        data: {
+                            ...data.data,
+                            timestamp: Date.now()
+                        }
                     }
-                }
-            ]));
+                ])
+            );
 
             ScriptApp.getStorage((storageStr: string) => {
                 const storage: GameStorage = storageStr ? JSON.parse(storageStr) : {};
                 storage.playerData = playersData;
                 storage.version = this.VERSION;
                 ScriptApp.setStorage(JSON.stringify(storage));
-                this.logEvent('PLAYERS_SAVED', { count: playersData.size });
+                ScriptApp.sayToStaffs(`[${EventType.PLAYERS_SAVED}] ${JSON.stringify({ count: playersData.size })}`);
             });
         } catch (error) {
-            this.logError('SAVE_FAILED', error);
+            ScriptApp.sayToStaffs(`[ERROR:${ErrorType.SAVE_FAILED}] ${error.message || JSON.stringify(error)}`);
         }
     }
 
-    private logEvent(type: string, data: any): void {
-        ScriptApp.sayToStaffs(`[${type}] ${JSON.stringify(data)}`);
-    }
+    public async toggleMovementMode(player: ScriptPlayer): Promise<void> {
+        try {
+            const playerData = this.players.get(player.id);
+            if (!playerData) {
+                ScriptApp.sayToStaffs(`[ERROR:${ErrorType.UPDATE_FAILED}] Player data not found for ID: ${player.id}`);
+                return;
+            }
 
-    private logError(type: string, error: any): void {
-        ScriptApp.sayToStaffs(`[ERROR:${type}] ${error.message || JSON.stringify(error)}`);
+            const currentMode = playerData.data.settings.moveMode;
+            const newMode = currentMode === MoveMode.WALK ? MoveMode.RUN : MoveMode.WALK;
+
+            // 데이터 업데이트
+            playerData.data.settings.moveMode = newMode;
+            this.players.set(player.id, playerData);
+
+            // 플레이어 상태 업데이트
+            await new Promise<void>((resolve) => {
+                player.moveSpeed = this.moveTypes[newMode].speed;
+                player.sendMessage(`${this.moveTypes[newMode].title}로 전환되었습니다.`, _colors.CYAN);
+                resolve();
+            });
+
+            // 변경사항 저장
+            await this.performSave();
+        } catch (error) {
+            ScriptApp.sayToStaffs(`[ERROR:${ErrorType.UPDATE_FAILED}] Failed to toggle movement mode: ${error.message}`);
+        }
     }
 }
 
@@ -585,8 +626,8 @@ const monsterManager = {
 
         // 탄소 배출량 감축 및 재활용률 증가
         environmentManager.updateMetrics({
-            carbonEmission: environmentManager.metrics.carbonEmission - carbonReduction,
-            recyclingRate: environmentManager.metrics.recyclingRate + recyclingIncrease
+            carbonEmission: environmentManager.getMetrics().carbonEmission - carbonReduction,
+            recyclingRate: environmentManager.getMetrics().recyclingRate + recyclingIncrease
         });
 
         // 결과 메시지 전송
@@ -598,8 +639,8 @@ const monsterManager = {
 
     giveReward: function(sender: ScriptPlayer): void {
         const moneyEarned = 0.3 + Math.random() * 0.5;
-        const newBalance = playerManager.addMoney(sender, moneyEarned);
-        sender.sendMessage(`$${moneyEarned.toFixed(2)}원 만큼 획득하였습니다. (현재 잔액: $${newBalance.toFixed(2)})`, _colors.DARK_GREEN);
+        // const newBalance = playerManager.addMoney(sender, moneyEarned);
+        // sender.sendMessage(`$${moneyEarned.toFixed(2)}원 만큼 획득하였습니다. (현재 잔액: $${newBalance.toFixed(2)})`, _colors.DARK_GREEN);
     },
 
     removeMonster: function(monster: any, key: string): void {
@@ -620,7 +661,6 @@ ScriptApp.onLeavePlayer.Add(function (player: ScriptPlayer) {
         player.tag.widget.destroy();
         player.tag.widget = null;
     }
-    playerManager.removePlayer(player);
 });
 
 // 플레이어 입장시 동작하는 함수
@@ -644,8 +684,8 @@ ScriptApp.onDestroy.Add(function () {
 });
 
 // R키를 눌렀을 때 이동 모드 전환
-ScriptApp.addOnKeyDown(82, function (player) {
-    playerManager.toggleMovementMode(player);
+ScriptApp.addOnKeyDown(82, async function (player) {
+    await playerManager.toggleMovementMode(player);
 });
 
 // 매 프레임마다 환경 업데이트
@@ -672,5 +712,6 @@ ScriptApp.onObjectTouched.Add(function (sender: ScriptPlayer, x: number, y: numb
 
 // 초기화
 ScriptApp.onInit.Add(function() {
+    const environmentManager = EnvironmentManager.getInstance();
     environmentManager.loadMetrics();
 });
