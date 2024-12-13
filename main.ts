@@ -4,7 +4,7 @@
 
 import { Script } from "vm";
 import "zep-script";
-import { ObjectEffectType, ScriptPlayer, TileEffectType } from "zep-script";
+import { ObjectEffectType, ScriptDynamicResource, ScriptPlayer, TileEffectType } from "zep-script";
 
 // 환경 지표 인터페이스 정의
 /**
@@ -124,7 +124,7 @@ const _maps = {
 }
 
 // 기본 색상들
-const _colors = {
+const _COLORS = {
     RED:        0xff0000,     // 빨간색
     GREEN:      0x00ff00,     // 초록색
     BLUE:       0x0000ff,     // 파란색
@@ -149,6 +149,20 @@ const _colors = {
     PURPLE:     0x800080,     // 보라색
     BROWN:      0xa52a2a,     // 갈색
 }
+
+// 이동 모드 상수
+const _MOVE_MODES = {
+    WALK: {
+        speed: 80,
+        title: "🚶🏻 걷기",
+        carbonEmission: 0.0001
+    },
+    RUN: {
+        speed: 150,
+        title: "🏃🏻 달리기",
+        carbonEmission: 0.0007
+    }
+} as const;
 
 // 환경 관리자
 const environmentManager = {
@@ -252,7 +266,6 @@ const environmentManager = {
                 this.metrics.carbonEmission + metrics.carbonEmission
             );
 
-            ScriptApp.sayToStaffs(`Carbon emission increased by factor ${metrics.carbonEmission} to ${newValue}`);
             if (newValue !== this.metrics.carbonEmission) {
                 this.metrics.carbonEmission = newValue;
                 hasChanges = true;
@@ -316,8 +329,8 @@ const playerManager = {
                     name: player.name,
                     money: 0,
                     moveMode: {
-                        WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0.0001 },
-                        RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 0.0007 },
+                        WALK: { ..._MOVE_MODES.WALK },
+                        RUN: { ..._MOVE_MODES.RUN },
                         current: 'WALK'
                     },
                     kills: 0,
@@ -339,9 +352,7 @@ const playerManager = {
                 // Storage에 저장
                 storage.user = this.players[player.id];
                 ScriptApp.setStorage(JSON.stringify(storage));
-
-                // 플레이어 이동 속성 설정
-                this.updatePlayerMovement(player);
+                ScriptApp.sayToStaffs(`${JSON.stringify(storage)}`);
             } catch (error) {
                 ScriptApp.sayToStaffs("플레이어 데이터 초기화 중 오류 발생:", error);
                 this.initializeDefaultPlayer(player);
@@ -356,34 +367,43 @@ const playerManager = {
             name: player.name,
             money: 0,
             moveMode: {
-                WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0.0001 },
-                RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 0.0007 },
+                WALK: { ..._MOVE_MODES.WALK },
+                RUN: { ..._MOVE_MODES.RUN },
                 current: 'WALK'
             },
             kills: 0,
             quizCorrects: 0
         };
-        this.updatePlayerMovement(player);
+        this.updatePlayerMoveStats(player);
     },
 
     // 플레이어 이동 속성 업데이트
-    updatePlayerMovement: function(player) {
-        const playerData = this.players[player.id];
-        if (!playerData) return;
+    updatePlayerMoveStats: function(player: ScriptPlayer) {
+        if (!this.players[player.id]) return;
 
-        const currentMode = playerData.moveMode[playerData.moveMode.current];
-        const scriptPlayer = ScriptApp.getPlayer(player.id);
-        if (scriptPlayer) {
-            scriptPlayer.moveSpeed = currentMode.speed;
-            scriptPlayer.title = currentMode.title;
-            scriptPlayer.sendUpdated();
-        }
+        this.players[player.id].moveMode.WALK = { ..._MOVE_MODES.WALK };
+        this.players[player.id].moveMode.RUN = { ..._MOVE_MODES.RUN };
+        this.savePlayerData(player.id);
+
+        ScriptApp.sayToStaffs(`플레이어 이동 속성 업데이트: ${player.name} (ID: ${player.id})`);
     },
 
     // 플레이어 제거
     removePlayer: function(player) {
-        ScriptApp.sayToStaffs(`플레이어 제거: ${player.name} (ID: ${player.id})`);
         delete this.players[player.id];
+        ScriptApp.sayToStaffs(`플레이어 제거: ${player.name} (ID: ${player.id})`);
+        ScriptApp.getStorage((storageStr: string) => {
+            try {
+                const storage: PlayerStorageData = storageStr ? JSON.parse(storageStr) : {};
+                if (storage.user?.id === player.id) {
+                    storage.user = undefined;
+                    ScriptApp.setStorage(JSON.stringify(storage));
+                    ScriptApp.sayToStaffs(`플레이어 데이터 삭제: ${player.name} (ID: ${player.id})`);
+                }
+            } catch (error) {
+                ScriptApp.sayToStaffs("플레이어 데이터 제거 중 오류 발생:", error);
+            }
+        });
     },
 
     // 돈 관련 함수들
@@ -432,45 +452,55 @@ const playerManager = {
         playerData.moveMode.current = playerData.moveMode.current === 'WALK' ? 'RUN' : 'WALK';
         const newMode = playerData.moveMode[playerData.moveMode.current];
         
-        const scriptPlayer = ScriptApp.getPlayer(player.id);
-        if (scriptPlayer) {
-            scriptPlayer.moveSpeed = newMode.speed;
-            scriptPlayer.title = newMode.title;
-            scriptPlayer.showCenterLabel(`${newMode.title}로 변경되었습니다!`);
-        }
+        player.moveSpeed = newMode.speed;
+        player.title = newMode.title;
+        player.sendUpdated();
         
         this.savePlayerData(player.id);
-        this.updatePlayerMovement(player);
     }
 };
 
-const monsterManager = {
-    respawnTimer: 0,
-    monster: 
-        ScriptApp.loadSpritesheet('monster.png', 96, 96, {
-            // defined base anim
-            left: [8, 9, 10, 11],
-            up: [12, 13, 14, 15],
-            down: [4, 5, 6, 7],
-            right: [16, 17, 18, 19],
-        }, 8),
+const objectManager = {
+    objects: {} as Record<string, {
+        resource: ScriptDynamicResource,
+        maxCount: number,
+        currentCount: number,
+        options?: any
+    }>,
+    
+    // 오브젝트 키에서 타입 추출
+    getObjectType: function(key: string): string | null {
+        const parts = key.split('_');
+        return parts[0] || null;
+    },
 
+    // 특정 타입의 오브젝트인지 확인
+    isObjectType: function(key: string, type: string): boolean {
+        return this.getObjectType(key) === type;
+    },
 
-    createMonster: function(minHp: number = 100, maxHp: number = 100) {
+    // 오브젝트가 존재하는지 확인
+    isValidObject: function(key: string): boolean {
+        const type = this.getObjectType(key);
+        return type !== null && type in this.objects;
+    },
+
+    // 맵의 랜덤 위치 찾기
+    findRandomPosition: function(): { x: number, y: number } | null {
         const mapWidth = ScriptMap.width;
         const mapHeight = ScriptMap.height;
         
         // 맵 크기에 따른 최적의 시도 횟수 계산
         const maxAttempts = Math.min(mapWidth * mapHeight / 4, 200);
-        let randomX: number;
-        let randomY: number;
+        const halfWidth = Math.floor(mapWidth / 2);
+        const halfHeight = Math.floor(mapHeight / 2);
         
         // 효율적인 위치 검색
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             // 맵의 4분면을 번갈아가며 검색
             const quadrant = attempt % 4;
-            const halfWidth = Math.floor(mapWidth / 2);
-            const halfHeight = Math.floor(mapHeight / 2);
+            let randomX: number;
+            let randomY: number;
             
             switch(quadrant) {
                 case 0: // 좌상단
@@ -492,28 +522,147 @@ const monsterManager = {
             }
             
             if (ScriptMap.getTile(2, randomX, randomY) !== TileEffectType.IMPASSABLE) {
-                const objectKey = `Monster_${randomX}_${randomY}`;
-                
-                const monsterObject = ScriptMap.putObjectWithKey(randomX, randomY, this.monster, {
-                    npcProperty: { 
-                        name: `쓰레기 빌런 ${Math.floor(Math.random() * 100) + 1}`, 
-                        hpColor: 0x03ff03, 
-                        hp: minHp, 
-                        hpMax: maxHp
-                    },
-                    overlap: true,
-                    collide: true,
-                    movespeed: 100, 
-                    key: objectKey,
-                    useDirAnim: true
-                });
-    
-                ScriptMap.playObjectAnimationWithKey(objectKey, "down", -1);
-                return;
+                return { x: randomX, y: randomY };
             }
         }
         
-        ScriptApp.sayToStaffs("적절한 위치를 찾을 수 없습니다.");
+        return null;
+    },
+
+    // 오브젝트 타입 등록
+    registerObjectType: function(key: string, resource: ScriptDynamicResource, maxCount: number, defaultOptions: any = {}) {
+        this.objects[key] = {
+            resource,
+            maxCount,
+            currentCount: 0,
+            options: defaultOptions
+        };
+        
+        // Storage에서 카운트 복원
+        ScriptApp.getStorage((storageStr: string) => {
+            try {
+                const storage = storageStr ? JSON.parse(storageStr) : {};
+                if (storage.objectCounts?.[key]) {
+                    this.objects[key].currentCount = storage.objectCounts[key];
+                }
+            } catch (error) {
+                ScriptApp.sayToStaffs(`오브젝트 카운트 복원 중 오류 발생 (${key}):`, error);
+            }
+        });
+    },
+
+    // 오브젝트 생성
+    createObject: function(type: string, specificOptions: any = {}): string | null {
+        const objectType = this.objects[type];
+        if (!objectType) {
+            ScriptApp.sayToStaffs(`[Debug] 등록되지 않은 오브젝트 타입: ${type}`);
+            return null;
+        }
+
+        if (objectType.currentCount >= objectType.maxCount) {
+            ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 제한 도달: ${type} (현재: ${objectType.currentCount}, 최대: ${objectType.maxCount})`);
+            return null;
+        }
+
+        const position = this.findRandomPosition();
+        if (!position) {
+            ScriptApp.sayToStaffs("[Debug] 적절한 위치를 찾을 수 없습니다.");
+            return null;
+        }
+        ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 위치 찾음: (${position.x}, ${position.y})`);
+
+        const objectKey = `${type}_${position.x}_${position.y}_${Date.now()}`;
+        const mergedOptions = Object.assign(
+            {},
+            objectType.options,
+            specificOptions,
+            {
+                key: objectKey,
+                objectType: type
+            }
+        );
+        
+        ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 시도: ${objectKey}`);
+        ScriptApp.sayToStaffs(`[Debug] 옵션: ${JSON.stringify(mergedOptions)}`);
+
+        const object = ScriptMap.putObjectWithKey(position.x, position.y, objectType.resource, mergedOptions);
+        if (object) {
+            objectType.currentCount++;
+            this.saveObjectCount(type);
+            ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 성공: ${objectKey} (현재 개수: ${objectType.currentCount})`);
+            return objectKey;
+        }
+        
+        ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 실패: ${objectKey}`);
+        return null;
+    },
+
+    // 오브젝트 제거
+    removeObject: function(type: string, key: string, x: number, y: number) {
+        const objectType = this.objects[type];
+        if (!objectType) {
+            ScriptApp.sayToStaffs(`등록되지 않은 오브젝트 타입: ${type}`);
+            return;
+        }
+
+        ScriptMap.putObjectWithKey(x, y, null, { key: key });
+        if (objectType.currentCount > 0) {
+            objectType.currentCount--;
+            this.saveObjectCount(type);
+        }
+    },
+
+    // 오브젝트 카운트 저장
+    saveObjectCount: function(type: string) {
+        ScriptApp.getStorage((storageStr: string) => {
+            try {
+                const storage = storageStr ? JSON.parse(storageStr) : {};
+                if (!storage.objectCounts) storage.objectCounts = {};
+                storage.objectCounts[type] = this.objects[type].currentCount;
+                ScriptApp.setStorage(JSON.stringify(storage));
+            } catch (error) {
+                ScriptApp.sayToStaffs(`오브젝트 카운트 저장 중 오류 발생 (${type}):`, error);
+            }
+        });
+    },
+
+    // 특정 타입의 현재 오브젝트 수 반환
+    getCurrentCount: function(type: string): number {
+        return this.objects[type]?.currentCount || 0;
+    },
+
+    // 특정 타입의 최대 오브젝트 수 반환
+    getMaxCount: function(type: string): number {
+        return this.objects[type]?.maxCount || 0;
+    }
+}
+
+const monsterManager = {
+    respawnTimer: 0,
+    monster: 
+        ScriptApp.loadSpritesheet('monster.png', 96, 96, {
+            // defined base anim
+            left: [8, 9, 10, 11],
+            up: [12, 13, 14, 15],
+            down: [4, 5, 6, 7],
+            right: [16, 17, 18, 19],
+        }, 8),
+
+    init: function() {
+        ScriptApp.sayToStaffs("[Debug] monsterManager 초기화 시작");
+        // 몬스터 타입 등록
+        objectManager.registerObjectType('monster', this.monster, 20, {
+            overlap: true,
+            collide: true,
+            movespeed: 100,
+            useDirAnim: true
+        });
+        ScriptApp.sayToStaffs("[Debug] 몬스터 타입 등록 완료");
+    },
+
+    // 몬스터 오브젝트인지 확인
+    isMonster: function(key: string): boolean {
+        return objectManager.isObjectType(key, 'monster');
     },
 
     respawnMonster: function(dt: number) {
@@ -522,11 +671,39 @@ const monsterManager = {
         // dt가 0.02초이므로, (0.02ms × 1500 = 30s)
         if (this.respawnTimer >= 30) { // 30초마다 빌런 생성
             this.respawnTimer = 0;
+            ScriptApp.sayToStaffs("[Debug] 몬스터 리스폰 시도");
             this.createMonster();
         }
     },
 
+    createMonster: function(minHp: number = 100, maxHp: number = 100) {
+        ScriptApp.sayToStaffs("[Debug] 몬스터 생성 시작");
+        const monsterKey = objectManager.createObject('monster', {
+            npcProperty: { 
+                name: `쓰레기 빌런 ${Math.floor(Math.random() * 100) + 1}`, 
+                hpColor: 0x03ff03, 
+                hp: minHp, 
+                hpMax: maxHp
+            }
+        });
+        
+        if (monsterKey) {
+            ScriptApp.sayToStaffs(`[Debug] 몬스터 생성 완료: ${monsterKey}`);
+            ScriptMap.playObjectAnimationWithKey(monsterKey, "down", -1);
+        } else {
+            ScriptApp.sayToStaffs("[Debug] 몬스터 생성 실패");
+        }
+    },
+
     handleObjectAttack:function(sender: ScriptPlayer, key: string) {
+        ScriptApp.sayToStaffs(`[Debug] 오브젝트 공격 처리: ${key}`);
+        
+        // 몬스터 오브젝트인지 먼저 확인
+        if (!this.isMonster(key)) {
+            ScriptApp.sayToStaffs(`[Debug] 몬스터가 아닌 오브젝트: ${key}`);
+            return;
+        }
+
         const targetObject = ScriptMap.getObjectWithKey(key) as unknown as { 
             npcProperty: { 
                 name: string;
@@ -561,9 +738,9 @@ const monsterManager = {
         const hpPercentage = monster.npcProperty.hp / monster.npcProperty.hpMax;
         
         if (hpPercentage < 0.3) {
-            monster.npcProperty.hpColor = _colors.RED;
+            monster.npcProperty.hpColor = _COLORS.RED;
         } else if (hpPercentage < 0.7) {
-            monster.npcProperty.hpColor = _colors.ORANGE;
+            monster.npcProperty.hpColor = _COLORS.ORANGE;
         }
         monster.sendUpdated();
     },
@@ -583,16 +760,16 @@ const monsterManager = {
         environmentManager.metrics.recyclingRate += recyclingIncrease;
 
         // 결과 메시지 전송
-        sender.sendMessage(`${monster.npcProperty.name}을 처치하였습니다!`, _colors.RED);
-        sender.sendMessage(`탄소배출량이 ${carbonReduction.toFixed(3)}톤 만큼 감축되었습니다.`, _colors.MAGENTA);
-        sender.sendMessage(`재활용률이 ${recyclingIncrease.toFixed(3)}% 만큼 증가하였습니다.`, _colors.MAGENTA);
+        sender.sendMessage(`${monster.npcProperty.name}을 처치하였습니다!`, _COLORS.RED);
+        sender.sendMessage(`탄소배출량이 ${carbonReduction.toFixed(3)}톤 만큼 감축되었습니다.`, _COLORS.MAGENTA);
+        sender.sendMessage(`재활용률이 ${recyclingIncrease.toFixed(3)}% 만큼 증가하였습니다.`, _COLORS.MAGENTA);
         sender.playSound("death.wav");
     },
 
     giveReward: function(sender: ScriptPlayer): void {
         const moneyEarned = 0.3 + Math.random() * 0.5;
         const newBalance = playerManager.addMoney(sender, moneyEarned);
-        sender.sendMessage(`$${moneyEarned.toFixed(2)}원 만큼 획득하였습니다. (현재 잔액: $${newBalance.toFixed(2)})`, _colors.DARK_GREEN);
+        sender.sendMessage(`$${moneyEarned.toFixed(2)}원 만큼 획득하였습니다. (현재 잔액: $${newBalance.toFixed(2)})`, _COLORS.DARK_GREEN);
     },
 
     removeMonster: function(monster: any, key: string): void {
@@ -614,13 +791,13 @@ ScriptApp.onSay.Add(function (player: ScriptPlayer, text: string) {
             // 모든 플레이어의 moveMode 초기화
             Object.values(playerManager.players).forEach(playerData => {
                 playerData.moveMode = {
-                    WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0.0001 },
-                    RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 0.0007 },
+                    WALK: { ..._MOVE_MODES.WALK },
+                    RUN: { ..._MOVE_MODES.RUN },
                     current: 'WALK'
                 };
-                const scriptPlayer = ScriptApp.getPlayer(playerData.id);
+                const scriptPlayer = ScriptApp.players[playerData.id];
                 if (scriptPlayer) {
-                    playerManager.updatePlayerMovement(scriptPlayer);
+                    playerManager.updatePlayerMoveStats(scriptPlayer);
                 }
                 playerManager.savePlayerData(playerData.id);
             });
@@ -635,6 +812,34 @@ ScriptApp.onSay.Add(function (player: ScriptPlayer, text: string) {
                 - WALK: ${playerData.moveMode.WALK.carbonEmission}
                 - RUN: ${playerData.moveMode.RUN.carbonEmission}`);
             });
+            break;
+
+        case 'showinfo':
+            if(args.length < 2) {
+                ScriptApp.sayToStaffs("사용법: !showinfo <플레이어이름>");
+                break;
+            }
+
+            const targetPlayerName = args[1];
+            
+            const targetPlayer = Object.values(ScriptApp.players).find(p => p.name === targetPlayerName);
+            if(!targetPlayer) {
+                ScriptApp.sayToStaffs("플레이어를 찾을 수 없습니다.");
+                break;
+            }
+            
+            const targetPlayerData = playerManager.players[targetPlayer.id];
+            if(!targetPlayerData) {
+                ScriptApp.sayToStaffs("플레이어의 데이터를 찾을 수 없습니다.");
+                break;
+            }
+            
+            ScriptApp.sayToStaffs(`👤 플레이어 정보: ${targetPlayerData.name} (ID: ${targetPlayerData.id})
+            - 잔액: ${targetPlayerData.money}
+            - 이동 모드: ${targetPlayerData.moveMode.current}
+            - WALK: ${targetPlayerData.moveMode.WALK.carbonEmission}
+            - RUN: ${targetPlayerData.moveMode.RUN.carbonEmission}
+            `);
             break;
     }
 });
@@ -704,4 +909,5 @@ ScriptApp.onObjectTouched.Add(function (sender: ScriptPlayer, x: number, y: numb
 // 초기화
 ScriptApp.onInit.Add(function() {
     environmentManager.initialize();
+    monsterManager.init();
 });
