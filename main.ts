@@ -246,11 +246,13 @@ const environmentManager = {
         let hasChanges = false;
         
         if (metrics.carbonEmission !== undefined) {
-            const randomFactor = 0.25 + Math.random() * 1.0; // 0.25 ~ 1.25 사이의 랜덤 값
+            // const randomFactor = 0.25 + Math.random() * 1.0; // 0.25 ~ 1.25 사이의 랜덤 값
             const newValue = Math.max(
                 0, 
-                this.metrics.carbonEmission + (metrics.carbonEmission * randomFactor)
+                this.metrics.carbonEmission + metrics.carbonEmission
             );
+
+            ScriptApp.sayToStaffs(`Carbon emission increased by factor ${metrics.carbonEmission} to ${newValue}`);
             if (newValue !== this.metrics.carbonEmission) {
                 this.metrics.carbonEmission = newValue;
                 hasChanges = true;
@@ -263,8 +265,6 @@ const environmentManager = {
                     this.metrics.lastCarbonThreshold = currentThreshold;
                     ScriptApp.sayToStaffs(`Air pollution increased by factor ${airPollutionFactor.toFixed(2)} due to carbon threshold ${currentThreshold}`);
                 }
-                
-                // ScriptApp.sayToStaffs(`Carbon emission updated to: ${newValue} (Random factor: ${randomFactor.toFixed(2)})`);
             }
         }
         
@@ -316,8 +316,8 @@ const playerManager = {
                     name: player.name,
                     money: 0,
                     moveMode: {
-                        WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0 },
-                        RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 5 },
+                        WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0.0001 },
+                        RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 0.0007 },
                         current: 'WALK'
                     },
                     kills: 0,
@@ -356,8 +356,8 @@ const playerManager = {
             name: player.name,
             money: 0,
             moveMode: {
-                WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0.001 },
-                RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 0.015 },
+                WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0.0001 },
+                RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 0.0007 },
                 current: 'WALK'
             },
             kills: 0,
@@ -372,9 +372,12 @@ const playerManager = {
         if (!playerData) return;
 
         const currentMode = playerData.moveMode[playerData.moveMode.current];
-        player.moveSpeed = currentMode.speed;
-        player.title = currentMode.title;
-        player.sendUpdated();
+        const scriptPlayer = ScriptApp.getPlayer(player.id);
+        if (scriptPlayer) {
+            scriptPlayer.moveSpeed = currentMode.speed;
+            scriptPlayer.title = currentMode.title;
+            scriptPlayer.sendUpdated();
+        }
     },
 
     // 플레이어 제거
@@ -429,12 +432,15 @@ const playerManager = {
         playerData.moveMode.current = playerData.moveMode.current === 'WALK' ? 'RUN' : 'WALK';
         const newMode = playerData.moveMode[playerData.moveMode.current];
         
-        player.moveSpeed = newMode.speed;
-        player.title = newMode.title;
-        player.showCenterLabel(`${newMode.title}로 변경되었습니다!`);
+        const scriptPlayer = ScriptApp.getPlayer(player.id);
+        if (scriptPlayer) {
+            scriptPlayer.moveSpeed = newMode.speed;
+            scriptPlayer.title = newMode.title;
+            scriptPlayer.showCenterLabel(`${newMode.title}로 변경되었습니다!`);
+        }
         
         this.savePlayerData(player.id);
-        player.sendUpdated();
+        this.updatePlayerMovement(player);
     }
 };
 
@@ -563,12 +569,12 @@ const monsterManager = {
     },
 
     handleMonsterDefeat: function(sender: ScriptPlayer, monster: any, key: string): void {
-        this.processVictory(sender, monster);
+        this.killedSuccess(sender, monster);
         this.giveReward(sender);
         this.removeMonster(monster, key);
     },
 
-    processVictory: function(sender: ScriptPlayer, monster: any): void {
+    killedSuccess: function(sender: ScriptPlayer, monster: any): void {
         const carbonReduction = 0.05 + Math.random() * 0.1;
         const recyclingIncrease = 0.001 + Math.random() * 0.01;
 
@@ -594,6 +600,45 @@ const monsterManager = {
     },
 
 }
+
+// 스태프 명령어 처리
+ScriptApp.onSay.Add(function (player: ScriptPlayer, text: string) {
+    // !가 포함되어 있지 않으면 무시
+    if (!text.includes('!')) return;
+
+    const args = text.split(' ');
+    const command = args[0].toLowerCase().replace('!', '');  // ! 제거
+
+    switch (command) {
+        case 'resetmove':
+            // 모든 플레이어의 moveMode 초기화
+            Object.values(playerManager.players).forEach(playerData => {
+                playerData.moveMode = {
+                    WALK: { speed: 80, title: "🚶🏻 걷기", carbonEmission: 0.0001 },
+                    RUN: { speed: 150, title: "🏃🏻 달리기", carbonEmission: 0.0007 },
+                    current: 'WALK'
+                };
+                const scriptPlayer = ScriptApp.getPlayer(playerData.id);
+                if (scriptPlayer) {
+                    playerManager.updatePlayerMovement(scriptPlayer);
+                }
+                playerManager.savePlayerData(playerData.id);
+            });
+            ScriptApp.sayToAll("🔄 모든 플레이어의 이동 모드가 초기화되었습니다.");
+            break;
+
+        case 'showmove':
+            // 모든 플레이어의 moveMode 상태 표시
+            Object.values(playerManager.players).forEach(playerData => {
+                ScriptApp.sayToStaffs(`👤 ${playerData.name}:
+                - 현재 모드: ${playerData.moveMode.current}
+                - WALK: ${playerData.moveMode.WALK.carbonEmission}
+                - RUN: ${playerData.moveMode.RUN.carbonEmission}`);
+            });
+            break;
+    }
+});
+
 // 사이드바 앱이 터치(클릭)되었을 때 동작하는 함수
 ScriptApp.onSidebarTouched.Add(function (player: ScriptPlayer) {
     const widget = player.showWidget("widget.html", "sidebar", 350, 350);
