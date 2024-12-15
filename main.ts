@@ -466,9 +466,10 @@ const objectManager = {
         resource: ScriptDynamicResource,
         maxCount: number,
         currentCount: number,
+        positions: Array<{x: number, y: number, key: string}>,
         options?: any
     }>,
-    
+
     // 오브젝트 키에서 타입 추출
     getObjectType: function(key: string): string | null {
         const parts = key.split('_');
@@ -530,12 +531,62 @@ const objectManager = {
         return null;
     },
 
+    // 오브젝트 위치 저장
+    saveObjectPositions: function(type: string, x: number, y: number, key: string) {
+        if (!this.objects[type]) return;
+        
+        if (!this.objects[type].positions) {
+            this.objects[type].positions = [];
+        }
+        
+        this.objects[type].positions.push({ x, y, key });
+        
+        // Storage에 위치 정보 저장
+        ScriptApp.getStorage((storageStr: string) => {
+            try {
+                const storage = storageStr ? JSON.parse(storageStr) : {};
+                if (!storage.objectPositions) storage.objectPositions = {};
+                storage.objectPositions[type] = this.objects[type].positions;
+                ScriptApp.setStorage(JSON.stringify(storage));
+            } catch (error) {
+                ScriptApp.sayToStaffs(`오브젝트 위치 저장 중 오류 발생 (${type}):`, error);
+            }
+        });
+    },
+
+    // 오브젝트 위치 복원
+    restoreObjectPositions: function(type: string) {
+        ScriptApp.getStorage((storageStr: string) => {
+            try {
+                const storage = storageStr ? JSON.parse(storageStr) : {};
+                const positions = storage.objectPositions?.[type] || [];
+                
+                if (positions.length > 0) {
+                    positions.forEach(pos => {
+                        const object = this.objects[type];
+                        if (object && object.resource) {
+                            ScriptMap.putObjectWithKey(pos.x, pos.y, object.resource, {
+                                key: pos.key
+                            });
+                            object.currentCount++;
+                        }
+                    });
+                    
+                    this.objects[type].positions = positions;
+                }
+            } catch (error) {
+                ScriptApp.sayToStaffs(`오브젝트 위치 복원 중 오류 발생 (${type}):`, error);
+            }
+        });
+    },
+
     // 오브젝트 타입 등록
     registerObjectType: function(key: string, resource: ScriptDynamicResource, maxCount: number, defaultOptions: any = {}) {
         this.objects[key] = {
             resource,
             maxCount,
             currentCount: 0,
+            positions: [],
             options: defaultOptions
         };
         
@@ -546,6 +597,7 @@ const objectManager = {
                 if (storage.objectCounts?.[key]) {
                     this.objects[key].currentCount = storage.objectCounts[key];
                 }
+                this.restoreObjectPositions(key);
             } catch (error) {
                 ScriptApp.sayToStaffs(`오브젝트 카운트 복원 중 오류 발생 (${key}):`, error);
             }
@@ -578,8 +630,7 @@ const objectManager = {
             objectType.options,
             specificOptions,
             {
-                key: objectKey,
-                objectType: type
+                key: objectKey
             }
         );
         
@@ -590,6 +641,7 @@ const objectManager = {
         if (object) {
             objectType.currentCount++;
             this.saveObjectCount(type);
+            this.saveObjectPositions(type, position.x, position.y, objectKey);
             ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 성공: ${objectKey} (현재 개수: ${objectType.currentCount})`);
             return objectKey;
         }
@@ -604,6 +656,23 @@ const objectManager = {
         if (!objectType) {
             ScriptApp.sayToStaffs(`등록되지 않은 오브젝트 타입: ${type}`);
             return;
+        }
+
+        // 위치 정보 제거
+        if (objectType.positions) {
+            objectType.positions = objectType.positions.filter(pos => pos.key !== key);
+            
+            // Storage 업데이트
+            ScriptApp.getStorage((storageStr: string) => {
+                try {
+                    const storage = storageStr ? JSON.parse(storageStr) : {};
+                    if (!storage.objectPositions) storage.objectPositions = {};
+                    storage.objectPositions[type] = objectType.positions;
+                    ScriptApp.setStorage(JSON.stringify(storage));
+                } catch (error) {
+                    ScriptApp.sayToStaffs(`오브젝트 위치 제거 중 오류 발생 (${type}):`, error);
+                }
+            });
         }
 
         ScriptMap.putObjectWithKey(x, y, null, { key: key });
@@ -635,6 +704,12 @@ const objectManager = {
     // 특정 타입의 최대 오브젝트 수 반환
     getMaxCount: function(type: string): number {
         return this.objects[type]?.maxCount || 0;
+    },
+
+    resetObjects: function() {
+        this.objects = {};
+        ScriptApp.setStorage(JSON.stringify({ objectCounts: {}, objectPositions: {} }));
+        ScriptApp.sayToStaffs(`[Debug] 오브젝트 리셋 완료`);
     }
 }
 
@@ -894,6 +969,7 @@ const catManager = {
     },
 
     removeCat: function(cat: any, key: string): void {
+        objectManager.removeObject('cat', key, cat.tileX, cat.tileY);
         ScriptMap.putObjectWithKey(cat.tileX, cat.tileY, null, { key: key });
     },
 }
@@ -910,40 +986,43 @@ ScriptApp.onSay.Add(function (player: ScriptPlayer, text: string) {
         if (args.length < 2) {
             ScriptApp.sayToStaffs(`
             스태프 명령어 사용법:
-            !staff <명령어> <플레이어이름>
+            !staff <명령어> [플레이어이름]
 
             사용 가능한 명령어:
-            - resetmove <플레이어이름>: 플레이어의 이동 모드 초기화
-            - showmove <플레이어이름>: 플레이어의 이동 모드 상태 표시
-            - showinfo <플레이어이름>: 플레이어의 상세 정보 표시
+            - resetmove [플레이어이름]: 플레이어의 이동 모드 초기화
+            - showmove [플레이어이름]: 플레이어의 이동 모드 상태 표시
+            - showinfo [플레이어이름]: 플레이어의 상세 정보 표시
+            
+            * 플레이어 이름을 입력하지 않으면 명령어를 입력한 스태프 본인에게 적용됩니다.
             `);
             return;
         }
 
         const subCommand = args[1].toLowerCase();
         const targetPlayerName = args[2];
+        
+        // 대상 플레이어 결정 (이름이 주어지지 않으면 명령어를 입력한 스태프)
+        let targetPlayer = player;
+        let targetPlayerData = playerManager.players[player.id];
 
-        if (!targetPlayerName) {
-            ScriptApp.sayToStaffs("플레이어 이름을 입력해주세요.");
-            return;
+        // 플레이어 이름이 주어진 경우 해당 플레이어 찾기
+        if (targetPlayerName) {
+            targetPlayer = Object.values(ScriptApp.players).find(p => p.name === targetPlayerName);
+            if (!targetPlayer) {
+                ScriptApp.sayToStaffs(`플레이어 '${targetPlayerName}'를 찾을 수 없습니다.`);
+                return;
+            }
+            targetPlayerData = playerManager.players[targetPlayer.id];
         }
 
-        // 플레이어 찾기
-        const targetPlayer = Object.values(ScriptApp.players).find(p => p.name === targetPlayerName);
-        if (!targetPlayer) {
-            ScriptApp.sayToStaffs(`플레이어 '${targetPlayerName}'를 찾을 수 없습니다.`);
-            return;
-        }
-
-        const targetPlayerData = playerManager.players[targetPlayer.id];
         if (!targetPlayerData) {
-            ScriptApp.sayToStaffs(`플레이어 '${targetPlayerName}'의 데이터를 찾을 수 없습니다.`);
+            ScriptApp.sayToStaffs(`플레이어 '${targetPlayer.name}'의 데이터를 찾을 수 없습니다.`);
             return;
         }
 
         switch (subCommand) {
             case 'resetmove':
-                // 특정 플레이어의 moveMode 초기화
+                // 플레이어의 moveMode 초기화
                 targetPlayerData.moveMode = {
                     WALK: { speed: 80, title: " 걷기", carbonEmission: 0.001 },
                     RUN: { speed: 150, title: " 달리기", carbonEmission: 0.015 },
@@ -951,13 +1030,13 @@ ScriptApp.onSay.Add(function (player: ScriptPlayer, text: string) {
                 };
                 playerManager.updatePlayerMoveStats(targetPlayer);
                 playerManager.savePlayerData(targetPlayer.id);
-                ScriptApp.sayToStaffs(`${targetPlayerName}의 이동 모드가 초기화되었습니다.`);
+                ScriptApp.sayToStaffs(`${targetPlayer.name}의 이동 모드가 초기화되었습니다.`);
                 break;
 
             case 'showmove':
-                // 특정 플레이어의 moveMode 상태 표시
+                // 플레이어의 moveMode 상태 표시
                 ScriptApp.sayToStaffs(`
-                ${targetPlayerName}의 이동 모드 정보:
+                ${targetPlayer.name}의 이동 모드 정보:
                 - 현재 모드: ${targetPlayerData.moveMode.current}
                 - WALK: 속도 ${targetPlayerData.moveMode.WALK.speed}, 탄소 배출 ${targetPlayerData.moveMode.WALK.carbonEmission}
                 - RUN: 속도 ${targetPlayerData.moveMode.RUN.speed}, 탄소 배출 ${targetPlayerData.moveMode.RUN.carbonEmission}
@@ -965,15 +1044,22 @@ ScriptApp.onSay.Add(function (player: ScriptPlayer, text: string) {
                 break;
 
             case 'showinfo':
-                // 특정 플레이어의 상세 정보 표시
+                // 플레이어의 상세 정보 표시
                 ScriptApp.sayToStaffs(`
                 플레이어 정보: ${targetPlayerData.name}
                 - ID: ${targetPlayerData.id}
                 - 잔액: $${targetPlayerData.money.toFixed(2)}
-                - 처치 수: ${targetPlayerData.kills}
+                - 청치 수: ${targetPlayerData.kills}
                 - 퀴즈 정답: ${targetPlayerData.quizCorrects}
                 - 현재 이동 모드: ${targetPlayerData.moveMode.current}
                 `);
+                break;
+                
+            case 'resetobjs':
+                // 객체를 초기화
+                objectManager.resetObjects();
+                targetPlayer.sendMessage("오브젝트를 초기화하였습니다.", _COLORS.DARK_GREEN);
+                targetPlayer.playSound("reset.wav");
                 break;
 
             default:
@@ -1013,11 +1099,6 @@ ScriptApp.onJoinPlayer.Add(function(player: ScriptPlayer) {
     environmentManager.setWidget(widget);
 });
 
-ScriptApp.onDestroy.Add(function () {
-  ScriptMap.clearAllObjects();
-  ScriptApp.sayToAll("블록이 파괴 되어 게임이 종료 되었습니다.")
-});
-
 // R키를 눌렀을 때 이동 모드 전환
 ScriptApp.addOnKeyDown(82, function (player) {
     playerManager.toggleMovementMode(player);
@@ -1048,7 +1129,7 @@ ScriptApp.onTriggerObject.Add(function(sender: ScriptPlayer, x: number, y: numbe
 });
 
 // 초기화
-ScriptApp.onInit.Add(function() {
+ScriptApp.onInit.Add(function () {
     environmentManager.initialize();
     monsterManager.init();
     catManager.init();
