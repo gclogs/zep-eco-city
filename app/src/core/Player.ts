@@ -1,3 +1,4 @@
+import { Script } from "vm";
 import { _COLORS } from "../utils/Color";
 import { ScriptPlayer } from "zep-script";
 
@@ -69,70 +70,26 @@ const _MOVE_MODES = {
 // 플레이어 관리자
 export const playerManager = {
     players: {} as Record<string, PlayerStats>,
-
     // 플레이어 초기화
     initPlayer: function(player: ScriptPlayer) {
-        if (this.players[player.id]) return;
-        ScriptApp.sayToStaffs(`플레이어 초기화: ${player.name} (ID: ${player.id})`);
-        
-        ScriptApp.getStorage((storageStr: string) => {
-            try {
-                const storage: PlayerStorageData = storageStr ? JSON.parse(storageStr) : {};
-                
-                // 새로운 플레이어 데이터 초기화
-                const newPlayerData: PlayerStats = {
-                    id: player.id,
-                    name: player.name,
-                    money: 0,
-                    moveMode: {
-                        WALK: { ..._MOVE_MODES.WALK },
-                        RUN: { ..._MOVE_MODES.RUN },
-                        current: 'WALK'
-                    },
-                    kills: 0,
-                    quizCorrects: 0
-                };
-
-                // 저장된 데이터가 있으면 복원
-                if (storage?.user) {
-                    this.players[player.id] = {
-                        ...newPlayerData,
-                        ...storage.user,
-                        id: player.id,  // ID는 항상 현재 값 사용
-                        name: player.name  // 이름은 항상 현재 값 사용
-                    };
-                } else {
-                    this.players[player.id] = newPlayerData;
-                }
-
-                // Storage에 저장
-                storage.user = this.players[player.id];
-                ScriptApp.setStorage(JSON.stringify(storage));
-                ScriptApp.httpPostJson(`http://211.105.236.55:8080/api/players/create`, {}, storage.user, (response: string) => {
-                    ScriptApp.sayToStaffs(`${response}`);
-                });
-            } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 플레이어 데이터 초기화 중 오류 발생:`, _COLORS.RED);
-                this.initializeDefaultPlayer(player);
-            }
-        });
-    },
-
-    // 기본 플레이어 초기화 (에러 발생 시 사용)
-    initializeDefaultPlayer: function(player: ScriptPlayer) {
-        this.players[player.id] = {
-            id: player.id,
-            name: player.name,
-            money: 0,
-            moveMode: {
-                WALK: { ..._MOVE_MODES.WALK },
-                RUN: { ..._MOVE_MODES.RUN },
-                current: 'WALK'
-            },
-            kills: 0,
-            quizCorrects: 0
+        if (player.name.includes("GUEST")) {
+            player.sendMessage("게스트는 게임에 참여할 수 없고, 구경만 가능합니다.")
         };
-        this.updatePlayerMoveStats(player);
+
+        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/`, {},
+            {
+                userId: player.id,
+                name: player.name
+            },
+            (response: any) => {
+                try {
+                    const userData = JSON.parse(response)
+                    ScriptApp.setStorage(JSON.stringify({ [player.id]: userData }));
+                } catch (error) {
+                    ScriptApp.sayToStaffs(`플레이어 데이터 로드 중 오류 발생 재접속 부탁드립니다.`, _COLORS.RED);
+                }
+            }
+        );
     },
 
     // 플레이어 이동 속성 업데이트
