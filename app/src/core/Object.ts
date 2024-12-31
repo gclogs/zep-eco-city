@@ -387,7 +387,6 @@ export const monsterManager = {
     giveReward: function(sender: ScriptPlayer): void {
         const moneyEarned = 0.3 + Math.random() * 0.5;
         const newBalance = playerManager.addMoney(sender, moneyEarned);
-        sender.sendMessage(`$${moneyEarned.toFixed(2)}원 만큼 획득하였습니다. (현재 잔액: $${newBalance.toFixed(2)})`, _COLORS.DARK_GREEN);
     },
 
     removeMonster: function(monster: any, key: string): void {
@@ -506,8 +505,7 @@ export const catManager = {
 
     giveReward: function(sender: ScriptPlayer): void {
         const moneyEarned = 0.3 + Math.random() * 0.5;
-        const newBalance = playerManager.addMoney(sender, moneyEarned);
-        sender.sendMessage(`$${moneyEarned.toFixed(2)}원 만큼 획득하였습니다. (현재 잔액: $${newBalance.toFixed(2)})`, _COLORS.DARK_GREEN);
+        playerManager.addMoney(sender, moneyEarned);
     },
 
     removeCat: function(cat: any, key: string): void {
