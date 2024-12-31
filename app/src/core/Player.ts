@@ -69,7 +69,7 @@ const _MOVE_MODES = {
 
 // 플레이어 관리자
 export const playerManager = {
-    players: {} as Record<string, PlayerStats>,
+    
     // 플레이어 초기화
     initPlayer: function(player: ScriptPlayer) {
         if (player.name.includes("GUEST")) {
@@ -92,85 +92,96 @@ export const playerManager = {
         );
     },
 
-    // 플레이어 이동 속성 업데이트
-    updatePlayerMoveStats: function(player: ScriptPlayer) {
-        if (!this.players[player.id]) return;
-
-        this.players[player.id].moveMode.WALK = { ..._MOVE_MODES.WALK };
-        this.players[player.id].moveMode.RUN = { ..._MOVE_MODES.RUN };
-        this.savePlayerData(player.id);
-
-        ScriptApp.sayToStaffs(`플레이어 이동 속성 업데이트: ${player.name} (ID: ${player.id})`);
-    },
-
     // 플레이어 제거
     removePlayer: function(player: ScriptPlayer) {
-        delete this.players[player.id];
-        ScriptApp.sayToStaffs(`플레이어 제거: ${player.name} (ID: ${player.id})`);
-        ScriptApp.getStorage((storageStr: string) => {
-            try {
-                const storage: PlayerStorageData = storageStr ? JSON.parse(storageStr) : {};
-                if (storage.user?.id === player.id) {
-                    storage.user = undefined;
-                    ScriptApp.setStorage(JSON.stringify(storage));
-                    ScriptApp.sayToStaffs(`플레이어 데이터 삭제: ${player.name} (ID: ${player.id})`);
+        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/delete`, 
+            {},
+            {
+                userId: player.id
+            },
+            () => {
+                try {
+                    ScriptApp.setStorage(JSON.stringify({ [player.id]: null }));
+                    ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 데이터 제거 완료`);
+                } catch (error) {
+                    ScriptApp.sayToStaffs(`플레이어 데이터 삭제중 오류 발생!`, _COLORS.RED);
                 }
-            } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 플레이어 데이터 제거 중 오류 발생:`, _COLORS.RED);
             }
-        });
+        );
     },
 
     // 돈 관련 함수들
     addMoney: function(player: ScriptPlayer, amount: number) {
-        if (!this.players[player.id]) {
-            this.initPlayer(player);
-            return 0;
-        }
-        this.players[player.id].money = Math.round((this.players[player.id].money + amount) * 100) / 100;
-        this.savePlayerData(player.id);
-        return this.players[player.id].money;
+        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/money/add`, 
+            {},
+            {
+                userId: player.id,
+                amount: amount
+            },
+            (response: any) => {
+                try {
+                    const userData = JSON.parse(response);
+                    ScriptApp.setStorage(JSON.stringify({ [player.id]: userData }));
+                    ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 ${amount}만큼 돈 추가 완료`, _COLORS.BLUE);
+
+                    player.sendMessage(`${player.name} 플레이어 ${amount}만큼 돈이 들어왔습니다!`, _COLORS.BLUE);
+                } catch (error) {
+                    ScriptApp.sayToStaffs(`돈 추가중 오류 발생!`, _COLORS.RED);
+                }
+            }
+        );
     },
 
     subtractMoney: function(player: ScriptPlayer, amount: number) {
-        if (!this.players[player.id]) {
-            this.initPlayer(player);
-            return 0;
-        }
-        this.players[player.id].money = Math.round((this.players[player.id].money - amount) * 100) / 100;
-        this.savePlayerData(player.id);
-        return this.players[player.id].money;
-    },
+        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/money/subtract`, 
+            {},
+            {
+                userId: player.id,
+                amount: amount
+            },
+            (response: any) => {
+                try {
+                    const userData = JSON.parse(response);
+                    ScriptApp.setStorage(JSON.stringify({ [player.id]: userData }));
+                    ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 ${amount}만큼 돈 차감 완료`, _COLORS.BLUE);
 
-    // 플레이어 데이터 저장
-    savePlayerData: function(playerId: string) {
-        ScriptApp.getStorage((storageStr: string) => {
-            try {
-                const storage: PlayerStorageData = storageStr ? JSON.parse(storageStr) : {};
-                storage.user = this.players[playerId];
-                ScriptApp.setStorage(JSON.stringify(storage));
-            } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 플레이어 데이터 저장 중 오류 발생:`, _COLORS.RED);
+                    player.sendMessage(`${player.name} 플레이어 ${amount}만큼 돈이 차감되었습니다!`, _COLORS.BLUE);
+                } catch (error) {
+                    ScriptApp.sayToStaffs(`돈 차감중 오류 발생!`, _COLORS.RED);
+                }
             }
-        });
+        );
     },
 
     // 이동 모드 전환
     toggleMovementMode: function(player: ScriptPlayer) {
-        const playerData = this.players[player.id];
-        if (!playerData) {
-            ScriptApp.sayToStaffs(`플레이어 데이터 없음: ${player.name} (ID: ${player.id})`);
-            return;
-        }
+        ScriptApp.httpGet(`http://220.87.215.3:3000/api/users/${player.id}`, {}, (response: any) => {
+            const userData = JSON.parse(response);
+            const currentMode = userData.moveMode.current === 'WALK' ? 'RUN' : 'WALK';
+            try {
+                ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/moveMode/toggle`, 
+                    {},
+                    {
+                        userId: player.id,
+                        moveMode: {
+                            current: currentMode
+                        }
+                    },
+                    (response: any) => {
+                        const userData = JSON.parse(response);
+                        ScriptApp.setStorage(JSON.stringify({ [player.id]: userData }));
+                        ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 이동 모드 전환 완료`, _COLORS.DARK_GREEN);
+                        
+                        player.moveSpeed = userData.moveMode[currentMode].speed;
+                        player.title = userData.moveMode[currentMode].title;
+                        player.sendUpdated();
+                    }
+                );
 
-        // 현재 모드 전환
-        playerData.moveMode.current = playerData.moveMode.current === 'WALK' ? 'RUN' : 'WALK';
-        const newMode = playerData.moveMode[playerData.moveMode.current];
-        
-        player.moveSpeed = newMode.speed;
-        player.title = newMode.title;
-        player.sendUpdated();
-        
-        this.savePlayerData(player.id);
+            } catch (error) {
+                ScriptApp.sayToStaffs(`이동 모드 전환중 오류 발생!`, _COLORS.RED);
+            }
+        });
+
     }
 };
