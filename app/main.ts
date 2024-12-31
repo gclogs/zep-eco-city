@@ -4,7 +4,6 @@ import { PlayerQuitEvent } from "./src/events/PlayerQuitEvent";
 import { playerManager } from "./src/core/Player";
 import { _COLORS } from "./src/utils/Color";
 import { PlayerTouchedSidebarEvent } from "./src/events/PlayerTouchedSidebarEvent";
-import { Command } from "./src/events/Command";
 import { environmentManager } from "./src/core/Environment";
 
 const STATE_INIT = 3000;
@@ -19,7 +18,6 @@ let _answerCount = 0;
 
 // 사이드바 앱이 터치(클릭)되었을 때 동작하는 함수
 ScriptApp.onSidebarTouched.Add((player: ScriptPlayer) => {new PlayerTouchedSidebarEvent(player);});
-ScriptApp.onSay.Add((player: ScriptPlayer, text: string) => {new Command(player, text);});
 
 ScriptApp.onUpdate.Add((dt: number) => {
     environmentManager.updateEnvironmentByMovement(dt);
