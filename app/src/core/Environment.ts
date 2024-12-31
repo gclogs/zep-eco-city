@@ -107,14 +107,19 @@ export const environmentManager = {
         if (this.updateTimer >= 1) {
             this.updateTimer = 0;
             
-            // 모든 플레이어의 현재 이동 모드에 따라 환경 지표 업데이트
-            for (const playerId in playerManager.players) {
-                const playerData = playerManager.players[playerId];
-                const currentMode = playerData.moveMode[playerData.moveMode.current];
-                this.updateMetrics({
-                    carbonEmission: currentMode.carbonEmission
-                });
-            }
+            ScriptApp.httpGet(`http://220.87.215.3:3000/api/users/list`, {}, (response: any) => {
+                try {
+                    const userData = JSON.parse(response);
+                    for (const playerId in userData) {
+                        const currentMode = userData[playerId].moveMode[userData[playerId].moveMode.current];
+                        this.updateMetrics({
+                            carbonEmission: currentMode.carbonEmission
+                        });
+                    }
+                } catch (error) {
+                    ScriptApp.sayToStaffs(`모든 플레이어의 이동 모드 로드 중 오류 발생!`, _COLORS.RED);
+                }
+            });
         }
     },
 
@@ -160,19 +165,15 @@ export const environmentManager = {
 
     // 디스플레이 업데이트
     updateDisplays: function() {
-        try {
-            Array.from(this.displays.widgets).forEach((widget: any) => {
-                widget.sendMessage({
-                    type: "update_metrics",
-                    data: {
-                        airPollution: this.metrics.airPollution,
-                        carbonEmission: this.metrics.carbonEmission,
-                        recyclingRate: this.metrics.recyclingRate,
-                    }
-                });
+        Array.from(this.displays.widgets).forEach((widget: any) => {
+            widget.sendMessage({
+                type: "update_metrics",
+                data: {
+                    airPollution: this.metrics.airPollution,
+                    carbonEmission: this.metrics.carbonEmission,
+                    recyclingRate: this.metrics.recyclingRate,
+                }
             });
-        } catch (error) {
-            ScriptApp.sayToStaffs(`${error} 디스플레이 업데이트 중 오류 발생:`, _COLORS.RED);
-        }
+        });
     }
 };
