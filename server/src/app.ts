@@ -3,6 +3,7 @@ import morgan from 'morgan';
 import { config } from './config/dotenv';
 import { corsMiddleware } from './config/cors';
 import userRoutes from './routes/userRoutes';
+import environmentRoutes from './routes/environmentRoutes';
 import { connectDB } from './config/database';
 
 const app = express();
@@ -15,6 +16,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // 라우터 등록
 app.use('/api/users', userRoutes);
+app.use('/api/environment', environmentRoutes);
 
 // 기본 라우트
 app.get('/', (req, res) => {
