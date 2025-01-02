@@ -5,7 +5,7 @@ class UserService {
      * 사용자 생성 또는 조회
      */
     async findOrCreateUser(userId: string, name: string): Promise<IUser> {
-        let user = await User.findOne({ userId });
+        let user = await this.findUser(userId);
         
         if (!user) {
             user = new User({
@@ -23,6 +23,14 @@ class UserService {
         return user;
     }
 
+    async findUser(userId: string): Promise<IUser | null> {
+        return await User.findOne({ userId });
+    }
+
+    async listUser(): Promise<IUser[]> {
+        return await User.find();
+    }
+
     /**
      * 사용자 정보 업데이트
      */
@@ -30,6 +38,20 @@ class UserService {
         return await User.findOneAndUpdate(
             { userId },
             { $set: updateData },
+            { new: true }
+        );
+    }
+
+    /**
+     * 사용자 이동 모드 업데이트
+     * @param userId 사용자 ID
+     * @param moveMode 이동 모드 데이터
+     * @returns 유저 업데이트 정보
+     */
+    async updateMoveMode(userId: string, moveMode: { current: 'WALK' | 'RUN' }): Promise<IUser | null> {
+        return await User.findOneAndUpdate(
+            { userId },
+            { $set: { 'moveMode.current': moveMode.current } },
             { new: true }
         );
     }

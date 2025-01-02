@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-interface EnvironmentMetrics extends Document {
+export interface IEnvironmentMetrics extends Document {
     /** 공기 오염도 (0-100 사이의 값) */
     airPollution: number;
     /** 탄소 배출량 (단위: 톤) */
@@ -11,11 +11,11 @@ interface EnvironmentMetrics extends Document {
     lastCarbonThreshold: number;
 }
 
-const EnvironmentSchema = new Schema<EnvironmentMetrics>({
+const EnvironmentSchema = new Schema<IEnvironmentMetrics>({
     airPollution: { type: Number, required: true, default: 0 },
     carbonEmission: { type: Number, required: true, default: 0 },
     recyclingRate: { type: Number, required: true, default: 0 },
     lastCarbonThreshold: { type: Number, required: true, default: 0 }
 });
 
-export const Environment = mongoose.model<EnvironmentMetrics>('Environment', EnvironmentSchema);
+export const Environment = mongoose.model<IEnvironmentMetrics>('Environment', EnvironmentSchema);
