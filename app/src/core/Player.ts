@@ -73,10 +73,11 @@ export const playerManager = {
     // 플레이어 초기화
     initPlayer: function(player: ScriptPlayer) {
         if (player.name.includes("GUEST")) {
-            player.sendMessage("게스트는 게임에 참여할 수 없고, 구경만 가능합니다.")
+            player.sendMessage("게스트는 게임에 참여할 수 없고, 구경만 가능합니다.");
+            return;
         };
 
-        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/`, {},
+        ScriptApp.httpPostJson(`${process.env.SERVER_URL}/api/users/`, {},
             {
                 userId: player.id,
                 name: player.name
@@ -94,7 +95,7 @@ export const playerManager = {
 
     // 플레이어 제거
     removePlayer: function(player: ScriptPlayer) {
-        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/delete`, 
+        ScriptApp.httpPostJson(`${process.env.SERVER_URL}/api/users/delete`, 
             {},
             {
                 userId: player.id
@@ -112,7 +113,7 @@ export const playerManager = {
 
     // 돈 관련 함수들
     addMoney: function(player: ScriptPlayer, amount: number) {
-        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/money/add`, 
+        ScriptApp.httpPostJson(`${process.env.SERVER_URL}/api/users/money/add`, 
             {},
             {
                 userId: player.id,
@@ -133,7 +134,7 @@ export const playerManager = {
     },
 
     subtractMoney: function(player: ScriptPlayer, amount: number) {
-        ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/money/subtract`, 
+        ScriptApp.httpPostJson(`${process.env.SERVER_URL}/api/users/money/subtract`, 
             {},
             {
                 userId: player.id,
@@ -155,11 +156,11 @@ export const playerManager = {
 
     // 이동 모드 전환
     toggleMovementMode: function(player: ScriptPlayer) {
-        ScriptApp.httpGet(`http://220.87.215.3:3000/api/users/${player.id}`, {}, (response: any) => {
+        ScriptApp.httpGet(`${process.env.SERVER_URL}/api/users/${player.id}`, {}, (response: any) => {
             const userData = JSON.parse(response);
             const currentMode = userData.moveMode.current === 'WALK' ? 'RUN' : 'WALK';
             try {
-                ScriptApp.httpPostJson(`http://220.87.215.3:3000/api/users/moveMode/toggle`, 
+                ScriptApp.httpPostJson(`${process.env.SERVER_URL}/api/users/moveMode/toggle`, 
                     {},
                     {
                         userId: player.id,
