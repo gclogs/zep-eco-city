@@ -1,3 +1,4 @@
+import { playerManager } from "../core/Player";
 import { ScriptPlayer } from "zep-script";
 
 export class PlayerQuitEvent {
@@ -7,6 +8,8 @@ export class PlayerQuitEvent {
                 player.tag.widget.destroy();
                 player.tag.widget = null;
             }
+
+            playerManager.savePlayerToDB(player);
         });
     }
 }

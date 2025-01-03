@@ -1,5 +1,6 @@
 // 환경 지표 인터페이스 정의
 
+import { Config } from "../../src/utils/Config";
 import { _COLORS } from "../utils/Color";
 import { playerManager } from "./Player";
 import { ScriptPlayer, ScriptWidget } from "zep-script";
@@ -22,7 +23,7 @@ interface EnvironmentMetrics {
 /**
  * 환경 지표 데이터의 저장소 인터페이스
  */
-interface EnvironmenStorageData {
+interface EnvironmentStorageData {
     /** 저장된 환경 지표 데이터 */
     environmentMetrics?: EnvironmentMetrics;
 }
@@ -46,15 +47,13 @@ export const environmentManager = {
 
     // 초기화 시 저장된 데이터 로드
     initialize: function() {
-        ScriptApp.getStorage((storageStr: string) => {
+        ScriptApp.httpGet(`${Config.getApiUrl('environment/metrics')}`, {}, (response: any) => {
             try {
-                const storage: EnvironmenStorageData = storageStr ? JSON.parse(storageStr) : {};
-                if (storage?.environmentMetrics) {
-                    this.metrics = storage.environmentMetrics;
-                    this.updateDisplays();
-                }
+                const metrics = JSON.parse(response);
+                this.metrics = metrics;
+                this.updateDisplays();
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 환경 지표 로드 중 오류 발생:`, _COLORS.RED);
+                ScriptApp.sayToStaffs("환경 지표 로드 중 오류 발생:", _COLORS.RED);
             }
         });
     },
@@ -66,9 +65,8 @@ export const environmentManager = {
         if (this.saveTimer >= this.SAVE_INTERVAL) {
             this.saveTimer = 0;
             
-            ScriptApp.getStorage((storageStr: string) => {
-                try {
-                    const storage: EnvironmenStorageData = storageStr ? JSON.parse(storageStr) : {};
+            ScriptApp.getStorage(() => {
+                    const storage: EnvironmentStorageData = {};
                     const metricsToSave: EnvironmentMetrics = {
                         airPollution: Math.round(this.metrics.airPollution * 100) / 100,
                         carbonEmission: Math.round(this.metrics.carbonEmission * 100) / 100,
@@ -78,9 +76,7 @@ export const environmentManager = {
                     
                     storage.environmentMetrics = metricsToSave;
                     ScriptApp.setStorage(JSON.stringify(storage));
-                } catch (error) {
-                    ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", _COLORS.RED);
-                }
+                    ScriptApp.sayToAll(`${JSON.stringify(storage)}`, _COLORS.BLUE);
             });
         }
     },
@@ -106,18 +102,20 @@ export const environmentManager = {
         // dt가 0.02초이므로, (0.02ms × 50 = 1s)
         if (this.updateTimer >= 1) {
             this.updateTimer = 0;
-            
-            ScriptApp.httpGet(`http://220.87.215.3:3000/api/users/list`, {}, (response: any) => {
-                try {
-                    const userData = JSON.parse(response);
-                    for (const playerId in userData) {
-                        const currentMode = userData[playerId].moveMode[userData[playerId].moveMode.current];
-                        this.updateMetrics({
-                            carbonEmission: currentMode.carbonEmission
-                        });
-                    }
-                } catch (error) {
-                    ScriptApp.sayToStaffs(`모든 플레이어의 이동 모드 로드 중 오류 발생!`, _COLORS.RED);
+
+            ScriptApp.getStorage(() => {
+                const storage = JSON.parse(ScriptApp.storage);
+                const users = storage.users;
+
+                for (const playerId in users) {
+                    const currentMode = users[playerId].moveMode[users[playerId].moveMode.current];
+                    this.updateMetrics({
+                        carbonEmission: currentMode.carbonEmission
+                    });
+                }
+
+                if (storage.environmentMetrics) {
+                    this.updateMetrics(storage.environmentMetrics);
                 }
             });
         }
@@ -174,6 +172,23 @@ export const environmentManager = {
                     recyclingRate: this.metrics.recyclingRate,
                 }
             });
+        });
+    },
+
+    saveEnvironment: function() {
+        ScriptApp.getStorage((response: any) => {
+            const storage = JSON.parse(response);
+            const updateMetrics = storage.environmentMetrics;
+
+            ScriptApp.httpPostJson(`${Config.getApiUrl('environment/metrics')}`, {}, 
+                updateMetrics, (response: any) => {
+                try {
+                    const savedMetrics = JSON.parse(response);
+                    this.metrics = savedMetrics;
+                } catch (error) {
+                    ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", _COLORS.RED);
+                }
+            })
         });
     }
 };

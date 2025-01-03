@@ -20,9 +20,10 @@ let _answerCount = 0;
 ScriptApp.onSidebarTouched.Add((player: ScriptPlayer) => {new PlayerTouchedSidebarEvent(player);});
 
 ScriptApp.onUpdate.Add((dt: number) => {
-    environmentManager.updateEnvironmentByMovement(dt);
+    // environmentManager.updateEnvironmentByMovement(dt);
     environmentManager.saveMetrics(dt);
 });
+
 
 // R키를 눌렀을 때 이동 모드 전환
 ScriptApp.addOnKeyDown(82, function (player) { playerManager.toggleMovementMode(player); });

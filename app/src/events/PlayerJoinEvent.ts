@@ -8,7 +8,8 @@ export class PlayerJoinEvent {
             player.tag = {
                 widget: null,
             };
-            playerManager.initPlayer(player);
+            
+            playerManager.loadPlayer(player);
 
             // 환경 지표 위젯 생성
             const widget = player.showWidget("widget.html", "topleft", 300, 150);
