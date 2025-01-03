@@ -3,24 +3,25 @@ import { userService } from '../services/userService';
 
 const router = Router();
 
-/**
- * 사용자 생성 또는 조회
- * POST /api/users
- */
+// userRoutes.ts
+// 1. 사용자 생성/수정 (POST)
 router.post('/', async (req: Request, res: Response): Promise<any> => {
-    try {
-        const { userId, name } = req.body;
-        if (!userId || !name) {
-            return res.status(400).json({ error: '사용자 ID와 이름이 필요합니다.' });
-        }
-        
-        const user = await userService.findOrCreateUser(userId, name);
-        res.status(201).json(user);
-    } catch (error) {
-        res.status(500).json({ error: '서버 오류가 발생했습니다.' });
-    }
+    const userData = req.body;
+    const user = await userService.findOrCreateUser(userData);
+    res.status(201).json(user);
 });
 
+// 2. 사용자 조회 (GET)
+router.get('/:userId', async (req: Request, res: Response): Promise<any> => {
+    const userId = req.params.userId;
+    const user = await userService.findUser(userId);
+    
+    if (!user) {
+        return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
+    }
+    
+    res.status(200).json(user);
+});
 /**
  * 사용자 정보 조회
  * GET /api/users/list
@@ -34,8 +35,8 @@ router.get('/list', async (req: Request, res: Response): Promise<any> => {
  * 사용자 정보 조회
  * GET /api/users/:userId
  */
-router.get('/:userId', async (req: Request, res: Response): Promise<any> => {
-    const userId = req.params.userId;
+router.get('/', async (req: Request, res: Response): Promise<any> => {
+    const userId = req.body;
     if (!userId) {
         return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
     }
@@ -46,29 +47,6 @@ router.get('/:userId', async (req: Request, res: Response): Promise<any> => {
     }
     
     res.status(200).json(user);
-});
-
-/**
- * 사용자 이동 모드 업데이트
- * PUT /api/users/moveMode/toggle
- */
-router.post('/moveMode/toggle', async (req: Request, res: Response): Promise<any> => {
-    const { userId, moveMode } = req.body;
-
-    console.log(userId, moveMode);
-    
-    if (!userId || !moveMode) {
-        return res.status(400).json({ 
-            error: '사용자 ID와 이동 모드가 필요합니다.' 
-        });
-    }
-
-    const updatedUser = await userService.updateMoveMode(userId, moveMode);
-    if (!updatedUser) {
-        return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
-    }
-    
-    res.status(200).json(updatedUser);
 });
 
 /**
@@ -102,21 +80,6 @@ router.post('/money/subtract', async (req: Request, res: Response): Promise<any>
     }
     
     const user = await userService.subtractMoney(userId, amount);
-    res.json(user);
-});
-
-/**
- * 이동 모드 전환
- * POST /api/users/:userId/toggle-movement
- */
-router.post('/:userId/toggle-movement', async (req: Request, res: Response): Promise<any> => {
-    const { userId } = req.params;
-    const user = await userService.toggleMovementMode(userId);
-    
-    if (!user) {
-        return res.status(404).json({ error: '사용자를 찾을 수 없습니다.' });
-    }
-    
     res.json(user);
 });
 

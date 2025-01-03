@@ -2,29 +2,36 @@ import { User, IUser, MOVE_MODES } from '../models/user';
 
 class UserService {
     /**
-     * 사용자 생성 또는 조회
+     * 사용자 생성 또는 수정
      */
-    async findOrCreateUser(userId: string, name: string): Promise<IUser> {
-        let user = await this.findUser(userId);
+    async findOrCreateUser(data: IUser): Promise<IUser> {
+        let user: IUser = await this.findUser(data.userId);
+
+        const userData = {
+            name: data.name,
+            kills: data.kills,
+            money: data.money,
+            moveMode: {
+                WALK: MOVE_MODES.WALK,
+                RUN: MOVE_MODES.RUN,
+                current: data.moveMode.current
+            }
+        }
         
         if (!user) {
             user = new User({
-                userId,
-                name,
-                moveMode: {
-                    WALK: MOVE_MODES.WALK,
-                    RUN: MOVE_MODES.RUN,
-                    current: 'WALK'
-                }
+                userId: data.userId, ...userData
             });
             await user.save();
+        } else {
+            this.updateUser(data.userId, { ...userData });
         }
         
         return user;
     }
 
     async findUser(userId: string): Promise<IUser | null> {
-        return await User.findOne({ userId });
+        return await User.findOne({ userId: userId.toString() });
     }
 
     async listUser(): Promise<IUser[]> {
@@ -38,20 +45,6 @@ class UserService {
         return await User.findOneAndUpdate(
             { userId },
             { $set: updateData },
-            { new: true }
-        );
-    }
-
-    /**
-     * 사용자 이동 모드 업데이트
-     * @param userId 사용자 ID
-     * @param moveMode 이동 모드 데이터
-     * @returns 유저 업데이트 정보
-     */
-    async updateMoveMode(userId: string, moveMode: { current: 'WALK' | 'RUN' }): Promise<IUser | null> {
-        return await User.findOneAndUpdate(
-            { userId },
-            { $set: { 'moveMode.current': moveMode.current } },
             { new: true }
         );
     }
@@ -83,22 +76,6 @@ class UserService {
         );
     }
 
-    /**
-     * 이동 모드 전환
-     */
-    async toggleMovementMode(userId: string): Promise<IUser | null> {
-        const user = await User.findOne({ userId });
-        if (!user) {
-            throw new Error('사용자를 찾을 수 없습니다.');
-        }
-
-        const newMode = user.moveMode.current === 'WALK' ? 'RUN' : 'WALK';
-        return await User.findOneAndUpdate(
-            { userId },
-            { $set: { 'moveMode.current': newMode } },
-            { new: true }
-        );
-    }
     /**
      * 몬스터 처치 수 증가
      */
