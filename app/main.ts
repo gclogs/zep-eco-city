@@ -1,9 +1,6 @@
 import { ScriptPlayer } from "zep-script";
-import { PlayerJoinEvent } from "./src/events/PlayerJoinEvent";
-import { PlayerQuitEvent } from "./src/events/PlayerQuitEvent";
 import { playerManager } from "./src/core/Player";
 import { _COLORS } from "./src/utils/Color";
-import { PlayerTouchedSidebarEvent } from "./src/events/PlayerTouchedSidebarEvent";
 import { environmentManager } from "./src/core/Environment";
 
 const STATE_INIT = 3000;
@@ -16,19 +13,45 @@ let _stateTimer = 0;
 let _transformCount = 0;
 let _answerCount = 0;
 
-// 사이드바 앱이 터치(클릭)되었을 때 동작하는 함수
-ScriptApp.onSidebarTouched.Add((player: ScriptPlayer) => {new PlayerTouchedSidebarEvent(player);});
-
-ScriptApp.onUpdate.Add((dt: number) => {
-    // environmentManager.updateEnvironmentByMovement(dt);
-    environmentManager.saveMetrics(dt);
-});
+// ScriptApp.onUpdate.Add((dt: number) => {
+//     environmentManager.updateEnvironmentByMovement(dt);
+//     environmentManager.saveMetrics(dt);
+// });
 
 
 // R키를 눌렀을 때 이동 모드 전환
 ScriptApp.addOnKeyDown(82, function (player) { playerManager.toggleMovementMode(player); });
 
-ScriptApp.onLeavePlayer.Add((player: ScriptPlayer) => {new PlayerQuitEvent(player);})
+ScriptApp.onSidebarTouched.Add((player: ScriptPlayer) => {
+    const widget = player.showWidget("widget.html", "sidebar", 350, 350);
+    environmentManager.setWidget(widget);
+    player.tag.widget = widget;
+});
+
+ScriptApp.onLeavePlayer.Add((player: ScriptPlayer) => {
+    ScriptApp.onLeavePlayer.Add(() => {
+        if (player.tag.widget) {
+            player.tag.widget.destroy();
+            player.tag.widget = null;
+        }
+
+        playerManager.savePlayerToDB(player);
+    });
+})
+
 ScriptApp.onJoinPlayer.Add((player: ScriptPlayer) => {
-    new PlayerJoinEvent();
+    player.tag = {
+        widget: null,
+    };
+    
+    playerManager.initializePlayer(player);
+
+    // 환경 지표 위젯 생성
+    const widget = player.showWidget("widget.html", "topleft", 300, 150);
+    if (widget) {
+        environmentManager.setWidget(widget);
+        ScriptApp.sayToAll(`[시스템] ${player.name}님이 입장하셨습니다.`);
+    } else {
+        ScriptApp.sayToStaffs(`[오류] ${player.name}님의 위젯 생성 실패`);
+    }
 });

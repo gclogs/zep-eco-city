@@ -54,29 +54,28 @@ export const playerManager = {
     
     // 플레이어 초기화
     loadPlayer: function(player: ScriptPlayer) {
-        ScriptApp.sayToAll(ScriptApp.storage, _COLORS.BLUE);
-        ScriptApp.getStorage(() => {
-            const storage = JSON.parse(ScriptApp.storage) || { users: {} };
-            ScriptApp.sayToAll(ScriptApp.storage, _COLORS.RED);
+        ScriptApp.httpGet(`${Config.getApiUrl('users/')}`, {}, (response: any) => {
+            const userData = JSON.parse(response);
+            const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
+            storage.users[player.id] = userData;
 
-            if (!storage.users) {
-                storage.users = {};
-            }
-
-            if (!storage.users[player.id]) {
-                this.initializePlayer(player);
-            }
+            ScriptApp.setStorage(JSON.stringify(storage));
+            ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 로드 완료`);
         });
-
     },
 
     initializePlayer: function(player: ScriptPlayer) {
         if (player.name.includes("GUEST")) {
             player.sendMessage("게스트는 게임에 데이터가 저장이 되지 않습니다!", _COLORS.RED);
             return;
-        };
+        }
 
-        const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
+        let storage: PlayerStorage = JSON.parse(ScriptApp.storage);
+
+        for (const playerId in storage.users) {
+            if (storage.users[playerId].name === player.name) return;
+        }
+
         storage.users[player.id] = {
             id: player.id,
             name: player.name,
@@ -95,6 +94,7 @@ export const playerManager = {
 
         ScriptApp.setStorage(JSON.stringify(storage));
         ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 생성 완료`);
+            
     },
 
     // 플레이어 제거
