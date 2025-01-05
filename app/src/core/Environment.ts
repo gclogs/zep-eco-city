@@ -47,14 +47,23 @@ export const environmentManager = {
 
     // 초기화 시 저장된 데이터 로드
     initialize: function() {
-        ScriptApp.httpGet(`${Config.getApiUrl('environment/metrics')}`, {}, (response: any) => {
-            try {
-                const metrics = JSON.parse(response);
-                this.metrics = metrics;
-                this.updateDisplays();
-            } catch (error) {
-                ScriptApp.sayToStaffs("환경 지표 로드 중 오류 발생:", _COLORS.RED);
+        ScriptApp.getStorage(() => {
+            const storage = JSON.parse(ScriptApp.storage);
+            if (storage.environmentMetrics) {
+                this.metrics = storage.environmentMetrics;
+            } else {
+                this.metrics = {
+                    airPollution: 0,
+                    carbonEmission: 0,
+                    recyclingRate: 0,
+                    lastCarbonThreshold: 0
+                };
+
+                storage.environmentMetrics = this.metrics;
+                ScriptApp.setStorage(JSON.stringify(storage));
             }
+            
+            ScriptApp.sayToStaffs(JSON.stringify(storage.environmentMetrics));
         });
     },
 
@@ -127,33 +136,40 @@ export const environmentManager = {
         
         if (metrics.carbonEmission !== undefined) {
             // const randomFactor = 0.25 + Math.random() * 1.0; // 0.25 ~ 1.25 사이의 랜덤 값
-            const newValue = Math.max(
-                0, 
-                this.metrics.carbonEmission + metrics.carbonEmission
+            const newValue = Number(
+                Math.max(
+                    0, 
+                    Number((this.metrics.carbonEmission + metrics.carbonEmission).toFixed(5))
+                ).toFixed(5)
             );
 
             if (newValue !== this.metrics.carbonEmission) {
                 this.metrics.carbonEmission = newValue;
                 hasChanges = true;
                 
-                // 탄소 배출량이 1 단위로 증가할 때마다 공기 오염도 증가
-                const currentThreshold = Math.floor(newValue / 1) * 1;
+                const currentThreshold = Number((Math.floor(newValue / 0.00001) * 0.00001).toFixed(5));
                 if (currentThreshold > this.metrics.lastCarbonThreshold) {
-                    const airPollutionFactor = 0.25 + Math.random() * 1.75; // 0.25 ~ 2.0 사이의 랜덤 값
+                    const airPollutionFactor = Number((0.00025 + Math.random() * 0.00175).toFixed(5)); // 0.00025 ~ 0.002 사이의 랜덤 값
                     this.metrics.airPollution += airPollutionFactor;
                     this.metrics.lastCarbonThreshold = currentThreshold;
-                    ScriptApp.sayToStaffs(`Air pollution increased by factor ${airPollutionFactor.toFixed(2)} due to carbon threshold ${currentThreshold}`);
                 }
             }
         }
         
-        if (metrics.airPollution !== undefined && metrics.airPollution !== this.metrics.airPollution) {
-            this.metrics.airPollution = metrics.airPollution;
-            hasChanges = true;
+        if (metrics.airPollution !== undefined) {
+            const newAirPollution = Number(metrics.airPollution.toFixed(5));
+            if (newAirPollution !== this.metrics.airPollution) {
+                this.metrics.airPollution = newAirPollution;
+                hasChanges = true;
+            }
         }
-        if (metrics.recyclingRate !== undefined && metrics.recyclingRate !== this.metrics.recyclingRate) {
-            this.metrics.recyclingRate = metrics.recyclingRate;
-            hasChanges = true;
+
+        if (metrics.recyclingRate !== undefined) {
+            const newRecyclingRate = Number(metrics.recyclingRate.toFixed(5));
+            if (newRecyclingRate !== this.metrics.recyclingRate) {
+                this.metrics.recyclingRate = newRecyclingRate;
+                hasChanges = true;
+            }
         }
 
         if (hasChanges) {
@@ -176,19 +192,22 @@ export const environmentManager = {
     },
 
     saveEnvironment: function() {
-        ScriptApp.getStorage((response: any) => {
-            const storage = JSON.parse(response);
-            const updateMetrics = storage.environmentMetrics;
+        ScriptApp.getStorage(() => {
+            const storage = JSON.parse(ScriptApp.storage);
+            storage.environmentMetrics = this.metrics;
+            
+            ScriptApp.setStorage(JSON.stringify(storage));
+        });
 
-            ScriptApp.httpPostJson(`${Config.getApiUrl('environment/metrics')}`, {}, 
-                updateMetrics, (response: any) => {
-                try {
-                    const savedMetrics = JSON.parse(response);
-                    this.metrics = savedMetrics;
-                } catch (error) {
-                    ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", _COLORS.RED);
-                }
-            })
+        ScriptApp.httpPostJson(`${Config.getApiUrl('environment/metrics')}`, {}, 
+            this.metrics, 
+            (response: any) => {
+            try {
+                const savedMetrics = JSON.parse(response);
+                ScriptApp.sayToStaffs(`[${savedMetrics}]: 환경 지표 저장 완료`, _COLORS.BLUE);
+            } catch (error) {
+                ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", _COLORS.RED);
+            }
         });
     }
 };
