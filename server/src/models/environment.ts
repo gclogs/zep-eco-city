@@ -9,6 +9,7 @@ export interface IEnvironmentMetrics extends Document {
     recyclingRate: number;
     /** 마지막으로 체크한 탄소 배출량 임계값 (공기 오염도 증가 트리거) */
     lastCarbonThreshold: number;
+    updatedAt: Date;
 }
 
 const EnvironmentSchema = new Schema<IEnvironmentMetrics>({
@@ -16,6 +17,8 @@ const EnvironmentSchema = new Schema<IEnvironmentMetrics>({
     carbonEmission: { type: Number, required: true, default: 0 },
     recyclingRate: { type: Number, required: true, default: 0 },
     lastCarbonThreshold: { type: Number, required: true, default: 0 }
+}, {
+    timestamps: true
 });
 
 export const Environment = mongoose.model<IEnvironmentMetrics>('Environment', EnvironmentSchema);
