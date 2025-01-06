@@ -1,5 +1,4 @@
-import { _COLORS } from "../utils/Color";
-import { ScriptPlayer } from "zep-script";
+import { ColorType, ScriptPlayer } from "zep-script";
 import { Config } from "../utils/Config";
 import { Script } from "vm";
 
@@ -53,9 +52,8 @@ const MOVE_MODES = {
 // 플레이어 관리자
 export const playerManager = {
     
-    // 플레이어 초기화
-    loadPlayer: function(player: ScriptPlayer) {
-        ScriptApp.httpGet(`${Config.getApiUrl('users/')}`, {}, (response: any) => {
+    loadPlayer: function(player: ScriptPlayer): any {
+        const userExist = ScriptApp.httpGet(`${Config.getApiUrl('users/')}${player.id}`, {}, (response: any) => {
             const userData = JSON.parse(response);
             const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
             storage.users[player.id] = userData;
@@ -63,11 +61,13 @@ export const playerManager = {
             ScriptApp.setStorage(JSON.stringify(storage));
             ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 로드 완료`);
         });
+
+        return userExist;
     },
 
     initializePlayer: function(player: ScriptPlayer) {
         if (player.name.includes("GUEST")) {
-            player.sendMessage("게스트는 게임에 데이터가 저장이 되지 않습니다!", _COLORS.RED);
+            player.sendMessage("게스트는 게임에 데이터가 저장이 되지 않습니다!", ColorType.RED);
             return;
         }
 
@@ -82,7 +82,7 @@ export const playerManager = {
             for (const playerId in storage.users) {
                 if (storage.users[playerId].userId === player.id) return;
             }
-    
+
             storage.users[player.id] = {
                 userId: player.id,
                 name: player.name,
@@ -97,20 +97,24 @@ export const playerManager = {
                     current: 'WALK'
                 },
                 kills: 0
-            };
+            }
     
             ScriptApp.setStorage(JSON.stringify(storage));
-            player.sendMessage(`[${player.id}]: ${player.name} 플레이어 생성 완료`);
         });
     },
 
     // 플레이어 제거
     removePlayer: function(player: ScriptPlayer) {
-        const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
-        delete storage.users[player.id];
-
-        ScriptApp.setStorage(JSON.stringify(storage));
-        ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 데이터 제거 완료`);
+        ScriptApp.getStorage(() => {
+            const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
+            if(storage.users[player.id] === undefined) return;
+            
+            delete storage.users[player.id];
+    
+            ScriptApp.setStorage(JSON.stringify(storage));
+            ScriptApp.sayToStaffs(JSON.stringify(storage));
+            ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 데이터 제거 완료`);
+        });
     },
 
     // 돈 관련 함수들
@@ -128,11 +132,11 @@ export const playerManager = {
                     storage[player.id] = userData;
 
                     ScriptApp.setStorage(JSON.stringify(storage));
-                    ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 ${amount}만큼 돈 추가 완료`, _COLORS.BLUE);
+                    ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 ${amount}만큼 돈 추가 완료`, ColorType.BLUE);
 
-                    player.sendMessage(`${player.name} 플레이어 ${amount}만큼 돈이 들어왔습니다!`, _COLORS.BLUE);
+                    player.sendMessage(`${player.name} 플레이어 ${amount}만큼 돈이 들어왔습니다!`, ColorType.BLUE);
                 } catch (error) {
-                    ScriptApp.sayToStaffs(`돈 추가중 오류 발생!`, _COLORS.RED);
+                    ScriptApp.sayToStaffs(`돈 추가중 오류 발생!`, ColorType.RED);
                 }
             }
         );
@@ -152,11 +156,11 @@ export const playerManager = {
                     storage[player.id] = userData;
 
                     ScriptApp.setStorage(JSON.stringify(storage));
-                    ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 ${amount}만큼 돈 차감 완료`, _COLORS.BLUE);
+                    ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 ${amount}만큼 돈 차감 완료`, ColorType.BLUE);
 
-                    player.sendMessage(`${player.name} 플레이어 ${amount}만큼 돈이 차감되었습니다!`, _COLORS.BLUE);
+                    player.sendMessage(`${player.name} 플레이어 ${amount}만큼 돈이 차감되었습니다!`, ColorType.BLUE);
                 } catch (error) {
-                    ScriptApp.sayToStaffs(`돈 차감중 오류 발생!`, _COLORS.RED);
+                    ScriptApp.sayToStaffs(`돈 차감중 오류 발생!`, ColorType.RED);
                 }
             }
         );
@@ -176,72 +180,27 @@ export const playerManager = {
         });
     },
 
-    savePlayerToDB: function(player: ScriptPlayer) {
-        const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
-        const userData = storage.users[player.id];
-
-        const reuquestData: PlayerStats = {
-            userId: userData.userId,
-            name: userData.name,
-            money: userData.money,
-            moveMode: userData.moveMode,
-            kills: userData.kills
-        }
-
-        ScriptApp.httpPostJson(`${Config.getApiUrl('users/')}`, 
-            {},
-            reuquestData,
-            (response: any) => {
-                const userData: PlayerStats = JSON.parse(response);
-                ScriptApp.sayToStaffs(userData.userId);
-                ScriptApp.sayToStaffs(`${player.name} 플레이어 데이터 저장 완료`);
-                
-                this.removePlayer(player);
-            });
-    },
-    
-    saveAllPlayersToDB: function() {
-        const BATCH_SIZE = 10;
-        const INTERVAL = 150;
-
+    syncWithPlayerDB: function(player: ScriptPlayer) {
         ScriptApp.getStorage(() => {
             const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
-            const playerIdList = Object.keys(storage.users);
-            let saveCount = 0;
-            let errorCount = 0;
+            const userData = storage.users[player.id];
 
-            const processBatch = (startIndex: number) => {
-                const endIndex = Math.min(startIndex + BATCH_SIZE, playerIdList.length);
-                const currentBatch = playerIdList.slice(startIndex, endIndex);
-                
-                currentBatch.forEach((playerId: string) => {
-                    const userData = storage.users[playerId];
-
-                    ScriptApp.httpPostJson(`${Config.getApiUrl('users/')}`, 
-                        {},
-                        userData,
-                        (response: any) => { 
-                            try {
-                                const savedData: PlayerStats = JSON.parse(response);
-                                ScriptApp.sayToStaffs(`${savedData.userId} 플레이어 데이터 저장 완료`);
-                                saveCount++;
-                            } catch (error) {
-                                ScriptApp.sayToStaffs(`[${playerId}]: 플레이어 데이터 저장 중 오류 발생!`, _COLORS.RED);
-                                errorCount++;
-                            }
-                        });
-
-                        if(endIndex < playerIdList.length) {
-                            setTimeout(() => {
-                                processBatch(endIndex);
-                            }, INTERVAL);
-                        } else {
-                            ScriptApp.sayToStaffs(`전체 저장 완료 (성공: ${saveCount}, 실패: ${errorCount})`);
-                        }
-
-                        processBatch(0);
-                });
+            const reuquestData: PlayerStats = {
+                userId: userData.userId,
+                name: userData.name,
+                money: userData.money,
+                moveMode: userData.moveMode,
+                kills: userData.kills
             }
+
+            ScriptApp.httpPostJson(`${Config.getApiUrl('users/')}`, 
+                {},
+                reuquestData,
+                (response: any) => {
+                    ScriptApp.sayToStaffs(`${player.name} 플레이어 데이터 저장 완료`);
+                    this.removePlayer(player);
+                });
         });
+
     }
 };
