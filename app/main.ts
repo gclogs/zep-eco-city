@@ -1,6 +1,5 @@
 import { ScriptPlayer } from "zep-script";
 import { playerManager } from "./src/core/Player";
-import { _COLORS } from "./src/utils/Color";
 import { environmentManager } from "./src/core/Environment";
 
 const STATE_INIT = 3000;
@@ -13,10 +12,14 @@ let _stateTimer = 0;
 let _transformCount = 0;
 let _answerCount = 0;
 
-// ScriptApp.onUpdate.Add((dt: number) => {
-//     environmentManager.updateEnvironmentByMovement(dt);
-//     environmentManager.saveMetrics(dt);
-// });
+ScriptApp.onInit.Add(() => {
+    environmentManager.initialize();
+});
+
+ScriptApp.onDestroy.Add(() => {
+    environmentManager.saveEnvironment();
+    environmentManager.syncWithEnvironmentDB();
+});
 
 
 // R키를 눌렀을 때 이동 모드 전환
@@ -28,29 +31,36 @@ ScriptApp.onSidebarTouched.Add((player: ScriptPlayer) => {
     player.tag.widget = widget;
 });
 
-ScriptApp.onLeavePlayer.Add((player: ScriptPlayer) => {
-    ScriptApp.onLeavePlayer.Add(() => {
-        if (player.tag.widget) {
-            player.tag.widget.destroy();
-            player.tag.widget = null;
-        }
+ScriptApp.onUpdate.Add((dt: number) => {
+    environmentManager.scheduleUpdateEnvironmentByMovement(dt);
+    environmentManager.scheduleSaveEnvironment(dt);
+});
 
-        playerManager.savePlayerToDB(player);
-    });
-})
+ScriptApp.onLeavePlayer.Add((player: ScriptPlayer) => {
+    if (player.tag.widget) {
+        player.tag.widget.destroy();
+        player.tag.widget = null;
+    }
+
+    playerManager.removePlayer(player);
+    playerManager.syncWithPlayerDB(player);
+});
 
 ScriptApp.onJoinPlayer.Add((player: ScriptPlayer) => {
     player.tag = {
         widget: null,
     };
-    
-    playerManager.initializePlayer(player);
+
+    const userExist = playerManager.loadPlayer(player);
+    if (!userExist) {
+        playerManager.initializePlayer(player);
+    }
+
 
     // 환경 지표 위젯 생성
     const widget = player.showWidget("widget.html", "topleft", 300, 150);
     if (widget) {
         environmentManager.setWidget(widget);
-        ScriptApp.sayToAll(`[시스템] ${player.name}님이 입장하셨습니다.`);
     } else {
         ScriptApp.sayToStaffs(`[오류] ${player.name}님의 위젯 생성 실패`);
     }

@@ -3,15 +3,21 @@ import { userService } from '../services/userService';
 
 const router = Router();
 
-// userRoutes.ts
-// 1. 사용자 생성/수정 (POST)
+/**
+ * 사용자 생성 수정
+ * GET /api/users/
+ */
 router.post('/', async (req: Request, res: Response): Promise<any> => {
     const userData = req.body;
+    console.log(userData);
     const user = await userService.findOrCreateUser(userData);
     res.status(201).json(user);
 });
 
-// 2. 사용자 조회 (GET)
+/**
+ * 사용자 조회
+ * GET /api/users/:userId
+ */
 router.get('/:userId', async (req: Request, res: Response): Promise<any> => {
     const userId = req.params.userId;
     const user = await userService.findUser(userId);

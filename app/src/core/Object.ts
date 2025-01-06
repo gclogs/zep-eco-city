@@ -1,5 +1,4 @@
-import { _COLORS } from "../utils/Color";
-import { ObjectEffectType, ScriptDynamicResource, ScriptPlayer, TileEffectType } from "zep-script";
+import { ColorType, ObjectEffectType, ScriptDynamicResource, ScriptPlayer, TileEffectType } from "zep-script";
 import { playerManager } from "./Player";
 import { environmentManager } from "./Environment";
 
@@ -91,7 +90,7 @@ export const objectManager = {
                 storage.objectPositions[type] = this.objects[type].positions;
                 ScriptApp.setStorage(JSON.stringify(storage));
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 저장 중 오류 발생 (${type}):`, _COLORS.RED);
+                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 저장 중 오류 발생 (${type}):`, ColorType.RED);
             }
         });
     },
@@ -117,7 +116,7 @@ export const objectManager = {
                     this.objects[type].positions = positions;
                 }
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 복원 중 오류 발생 (${type}):`, _COLORS.RED);
+                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 복원 중 오류 발생 (${type}):`, ColorType.RED);
             }
         });
     },
@@ -141,7 +140,7 @@ export const objectManager = {
                 }
                 this.restoreObjectPositions(key);
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 오브젝트 카운트 복원 중 오류 발생 (${key}):`, _COLORS.RED);
+                ScriptApp.sayToStaffs(`${error} 오브젝트 카운트 복원 중 오류 발생 (${key}):`, ColorType.RED);
             }
         });
     },
@@ -212,7 +211,7 @@ export const objectManager = {
                     storage.objectPositions[type] = objectType.positions;
                     ScriptApp.setStorage(JSON.stringify(storage));
                 } catch (error) {
-                    ScriptApp.sayToStaffs(`${error} 오브젝트 위치 제거 중 오류 발생 (${type}):`, _COLORS.RED);
+                    ScriptApp.sayToStaffs(`${error} 오브젝트 위치 제거 중 오류 발생 (${type}):`, ColorType.RED);
                 }
             });
         }
@@ -233,7 +232,7 @@ export const objectManager = {
                 storage.objectCounts[type] = this.objects[type].currentCount;
                 ScriptApp.setStorage(JSON.stringify(storage));
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 오브젝트 카운트 저장 중 오류 발생 (${type}):`, _COLORS.RED);
+                ScriptApp.sayToStaffs(`${error} 오브젝트 카운트 저장 중 오류 발생 (${type}):`, ColorType.RED);
             }
         });
     },
@@ -356,9 +355,9 @@ export const monsterManager = {
         const hpPercentage = monster.npcProperty.hp / monster.npcProperty.hpMax;
         
         if (hpPercentage < 0.3) {
-            monster.npcProperty.hpColor = _COLORS.RED;
+            monster.npcProperty.hpColor = ColorType.RED;
         } else if (hpPercentage < 0.7) {
-            monster.npcProperty.hpColor = _COLORS.ORANGE;
+            monster.npcProperty.hpColor = ColorType.ORANGE;
         }
         monster.sendUpdated();
     },
@@ -378,9 +377,9 @@ export const monsterManager = {
         environmentManager.metrics.recyclingRate += recyclingIncrease;
 
         // 결과 메시지 전송
-        sender.sendMessage(`${monster.npcProperty.name}을 처치하였습니다!`, _COLORS.RED);
-        sender.sendMessage(`탄소배출량이 ${carbonReduction.toFixed(3)}톤 만큼 감축되었습니다.`, _COLORS.MAGENTA);
-        sender.sendMessage(`재활용률이 ${recyclingIncrease.toFixed(3)}% 만큼 증가하였습니다.`, _COLORS.MAGENTA);
+        sender.sendMessage(`${monster.npcProperty.name}을 처치하였습니다!`, ColorType.RED);
+        sender.sendMessage(`탄소배출량이 ${carbonReduction.toFixed(3)}톤 만큼 감축되었습니다.`, ColorType.MAGENTA);
+        sender.sendMessage(`재활용률이 ${recyclingIncrease.toFixed(3)}% 만큼 증가하였습니다.`, ColorType.MAGENTA);
         sender.playSound("death.wav");
     },
 
@@ -497,9 +496,9 @@ export const catManager = {
         environmentManager.metrics.recyclingRate += recyclingIncrease;
 
         // 결과 메시지 전송
-        sender.sendMessage(`${cat.npcProperty.name}을 처치하였습니다!`, _COLORS.RED);
-        sender.sendMessage(`탄소배출량이 ${carbonReduction.toFixed(3)}톤 만큼 감축되었습니다.`, _COLORS.MAGENTA);
-        sender.sendMessage(`재활용률이 ${recyclingIncrease.toFixed(3)}% 만큼 증가하였습니다.`, _COLORS.MAGENTA);
+        sender.sendMessage(`${cat.npcProperty.name}을 처치하였습니다!`, ColorType.RED);
+        sender.sendMessage(`탄소배출량이 ${carbonReduction.toFixed(3)}톤 만큼 감축되었습니다.`, ColorType.MAGENTA);
+        sender.sendMessage(`재활용률이 ${recyclingIncrease.toFixed(3)}% 만큼 증가하였습니다.`, ColorType.MAGENTA);
         sender.playSound("death.wav");
     },
 

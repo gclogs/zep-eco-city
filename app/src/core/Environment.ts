@@ -1,9 +1,8 @@
 // 환경 지표 인터페이스 정의
 
 import { Config } from "../../src/utils/Config";
-import { _COLORS } from "../utils/Color";
 import { playerManager } from "./Player";
-import { ScriptPlayer, ScriptWidget } from "zep-script";
+import { ColorType, ScriptPlayer, ScriptWidget } from "zep-script";
 
 /**
  * 게임 내 환경 지표를 관리하기 위한 인터페이스
@@ -15,38 +14,73 @@ interface EnvironmentMetrics {
     carbonEmission: number;
     /** 재활용률 (0-100 사이의 백분율) */
     recyclingRate: number;
+}
+/**
+ * 게임 내 환경 지표의 상태를 관리하기 위한 인터페이스
+ */
+interface EnvironmentState {
+    /** 전체 탄소 배출량 (단위: 톤) */
+    totalCarbonEmission: number;
     /** 마지막으로 체크한 탄소 배출량 임계값 (공기 오염도 증가 트리거) */
-    lastCarbonThreshold: number;  // 마지막으로 체크한 탄소 배출량 임계값
+    lastCarbonEmission: number;
 }
 
-// 저장소 데이터 인터페이스 정의
-/**
- * 환경 지표 데이터의 저장소 인터페이스
- */
-interface EnvironmentStorageData {
-    /** 저장된 환경 지표 데이터 */
-    environmentMetrics?: EnvironmentMetrics;
+// 상수 정의
+const ENVIRONMENT_CONSTANTS = {
+    SAVE_INTERVAL: 500,
+    UPDATE_INTERVAL: 1,
+    MIN_RANDOM_FACTOR: 0.00002,
+    MAX_RANDOM_FACTOR: 0.00005
+} as const;
+
+// 메시지 타입 정의
+interface WidgetMessage {
+    type: 'close' | 'update_metrics';
+    data?: {
+        airPollution: number;
+        carbonEmission: number;
+        recyclingRate: number;
+    };
 }
 
 // 환경 관리자
 export const environmentManager = {
     displays: {
-        widgets: new Set()
+        widgets: new Set<ScriptWidget>()
     },
 
     metrics: {
         airPollution: 0,
         carbonEmission: 0,
         recyclingRate: 0,
-        lastCarbonThreshold: 0
     } as EnvironmentMetrics,
+    
+    state: {
+        totalCarbonEmission: 0,
+        lastCarbonEmission: 0
+    } as EnvironmentState,
 
     updateTimer: 0,
     saveTimer: 0,
-    SAVE_INTERVAL: 500,
 
     // 초기화 시 저장된 데이터 로드
     initialize: function() {
+        ScriptApp.httpGet(`${Config.getApiUrl('environment/')}`, {}, (response: string) => {
+            try {
+                const savedMetrics: EnvironmentMetrics = JSON.parse(response);
+                this.metrics = savedMetrics;
+                ScriptApp.sayToStaffs(`환경 지표 로드 완료: ${this.metrics}`);
+            } catch (error: unknown) {
+                if (error instanceof Error) {
+                    ScriptApp.sayToStaffs(`환경 지표 로드 중 오류 발생: ${error.message}`, ColorType.RED);
+                }
+                this.loadFromAppStorage();
+            }
+        });  
+    },
+
+    // 스페이스(App) 스토리지에서 데이터 로드
+    loadFromAppStorage: function() {
         ScriptApp.getStorage(() => {
             const storage = JSON.parse(ScriptApp.storage);
             if (storage.environmentMetrics) {
@@ -55,38 +89,24 @@ export const environmentManager = {
                 this.metrics = {
                     airPollution: 0,
                     carbonEmission: 0,
-                    recyclingRate: 0,
-                    lastCarbonThreshold: 0
+                    recyclingRate: 0
                 };
-
-                storage.environmentMetrics = this.metrics;
-                ScriptApp.setStorage(JSON.stringify(storage));
+        
+                if (storage) {
+                    storage.environmentMetrics = this.metrics;
+                    ScriptApp.setStorage(JSON.stringify(storage));
+                }
             }
-            
-            ScriptApp.sayToStaffs(JSON.stringify(storage.environmentMetrics));
         });
     },
 
-    // 최적화된 저장 함수
-    saveMetrics: function(dt: number) {
+    // 주기적인 저장 스케줄링
+    scheduleSaveEnvironment: function(dt: number) {
         this.saveTimer += dt;
         
-        if (this.saveTimer >= this.SAVE_INTERVAL) {
+        if (this.saveTimer >= ENVIRONMENT_CONSTANTS.SAVE_INTERVAL) {
             this.saveTimer = 0;
-            
-            ScriptApp.getStorage(() => {
-                    const storage: EnvironmentStorageData = {};
-                    const metricsToSave: EnvironmentMetrics = {
-                        airPollution: Math.round(this.metrics.airPollution * 100) / 100,
-                        carbonEmission: Math.round(this.metrics.carbonEmission * 100) / 100,
-                        recyclingRate: Math.round(this.metrics.recyclingRate * 100) / 100,
-                        lastCarbonThreshold: this.metrics.lastCarbonThreshold
-                    };
-                    
-                    storage.environmentMetrics = metricsToSave;
-                    ScriptApp.setStorage(JSON.stringify(storage));
-                    ScriptApp.sayToAll(`${JSON.stringify(storage)}`, _COLORS.BLUE);
-            });
+            this.saveEnvironment();
         }
     },
 
@@ -96,8 +116,8 @@ export const environmentManager = {
         this.updateDisplays();
         
         // 위젯 메시지 이벤트 핸들러 설정
-        widget.onMessage.Add((player: ScriptPlayer, data: any) => {
-            if (data.type === "close") {
+        widget.onMessage.Add((player: ScriptPlayer, message: WidgetMessage) => {
+            if (message.type === "close") {
                 this.displays.widgets.delete(widget);
                 widget.destroy();
             }
@@ -105,76 +125,65 @@ export const environmentManager = {
     },
 
     // 주기적인 환경 지표 업데이트
-    updateEnvironmentByMovement: function(dt: number) {
+    scheduleUpdateEnvironmentByMovement: function(dt: number) {
         this.updateTimer += dt;
         
         // dt가 0.02초이므로, (0.02ms × 50 = 1s)
-        if (this.updateTimer >= 1) {
+        if (this.updateTimer >= ENVIRONMENT_CONSTANTS.UPDATE_INTERVAL) {
             this.updateTimer = 0;
 
             ScriptApp.getStorage(() => {
                 const storage = JSON.parse(ScriptApp.storage);
                 const users = storage.users;
 
+
                 for (const playerId in users) {
                     const currentMode = users[playerId].moveMode[users[playerId].moveMode.current];
-                    this.updateMetrics({
-                        carbonEmission: currentMode.carbonEmission
-                    });
+                    this.state.totalCarbonEmission += currentMode.carbonEmission;
                 }
-
-                if (storage.environmentMetrics) {
-                    this.updateMetrics(storage.environmentMetrics);
-                }
+            });
+            
+            this.processCarbonEmissionUpdate({
+                carbonEmission: this.state.totalCarbonEmission
             });
         }
     },
 
-    // 환경 지표 업데이트
-    updateMetrics: function(metrics: Partial<EnvironmentMetrics>) {
-        let hasChanges = false;
+    // 탄소 배출량 업데이트 처리
+    processCarbonEmissionUpdate: function(metrics: Partial<EnvironmentMetrics>) {
+        if (metrics.carbonEmission === undefined) {
+            ScriptApp.sayToStaffs("탄소 배출량 데이터가 없습니다.", ColorType.RED);
+            return;
+        }
+
+        const newEmission = this.calculateNewCarbonEmission(metrics.carbonEmission);
+        this.processAirPollutionUpdate(this.metrics.carbonEmission);
         
-        if (metrics.carbonEmission !== undefined) {
-            // const randomFactor = 0.25 + Math.random() * 1.0; // 0.25 ~ 1.25 사이의 랜덤 값
-            const newValue = Number(
-                Math.max(
-                    0, 
-                    Number((this.metrics.carbonEmission + metrics.carbonEmission).toFixed(5))
-                ).toFixed(5)
-            );
+        ScriptApp.sayToStaffs(`환경 지표 업데이트: 탄소배출량 ${this.metrics.carbonEmission.toFixed(5)}`);
+        this.updateDisplays();
+    },
 
-            if (newValue !== this.metrics.carbonEmission) {
-                this.metrics.carbonEmission = newValue;
-                hasChanges = true;
-                
-                const currentThreshold = Number((Math.floor(newValue / 0.00001) * 0.00001).toFixed(5));
-                if (currentThreshold > this.metrics.lastCarbonThreshold) {
-                    const airPollutionFactor = Number((0.00025 + Math.random() * 0.00175).toFixed(5)); // 0.00025 ~ 0.002 사이의 랜덤 값
-                    this.metrics.airPollution += airPollutionFactor;
-                    this.metrics.lastCarbonThreshold = currentThreshold;
-                }
-            }
-        }
+    // 새로운 탄소 배출량 계산
+    calculateNewCarbonEmission: function(currentEmission: number): number {
+        const randomFactor = ENVIRONMENT_CONSTANTS.MIN_RANDOM_FACTOR + 
+            Math.random() * (ENVIRONMENT_CONSTANTS.MAX_RANDOM_FACTOR - ENVIRONMENT_CONSTANTS.MIN_RANDOM_FACTOR);
         
-        if (metrics.airPollution !== undefined) {
-            const newAirPollution = Number(metrics.airPollution.toFixed(5));
-            if (newAirPollution !== this.metrics.airPollution) {
-                this.metrics.airPollution = newAirPollution;
-                hasChanges = true;
-            }
+        const totalEmission = Number((currentEmission + randomFactor).toFixed(6));
+        
+        this.metrics.carbonEmission += Number(Math.max(0, totalEmission).toFixed(6));
+        return this.metrics.carbonEmission;
+    },
+
+    // 공기 오염도 업데이트 처리
+    processAirPollutionUpdate: function(carbonEmission: number) {
+        if (carbonEmission < 0) return;
+        
+        const pollutionIncrement = Math.floor(carbonEmission / 10) - Math.floor(this.state.lastCarbonEmission / 10);
+        if (pollutionIncrement > 0) {
+            this.metrics.airPollution += pollutionIncrement;
         }
 
-        if (metrics.recyclingRate !== undefined) {
-            const newRecyclingRate = Number(metrics.recyclingRate.toFixed(5));
-            if (newRecyclingRate !== this.metrics.recyclingRate) {
-                this.metrics.recyclingRate = newRecyclingRate;
-                hasChanges = true;
-            }
-        }
-
-        if (hasChanges) {
-            this.updateDisplays();
-        }
+        this.state.lastCarbonEmission = carbonEmission;
     },
 
     // 디스플레이 업데이트
@@ -198,15 +207,17 @@ export const environmentManager = {
             
             ScriptApp.setStorage(JSON.stringify(storage));
         });
+    },
 
+    syncWithEnvironmentDB: function() {
         ScriptApp.httpPostJson(`${Config.getApiUrl('environment/metrics')}`, {}, 
-            this.metrics, 
+            this.metrics,
             (response: any) => {
             try {
                 const savedMetrics = JSON.parse(response);
-                ScriptApp.sayToStaffs(`[${savedMetrics}]: 환경 지표 저장 완료`, _COLORS.BLUE);
+                ScriptApp.sayToStaffs(`[${savedMetrics}]: 환경 지표 저장 완료`, ColorType.BLUE);
             } catch (error) {
-                ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", _COLORS.RED);
+                ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", ColorType.RED);
             }
         });
     }

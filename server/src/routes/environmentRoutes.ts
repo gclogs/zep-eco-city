@@ -10,7 +10,6 @@ router.get('/', async (req: Request, res: Response): Promise<any> => {
 
 router.post('/metrics', async (req: Request, res: Response): Promise<any> => {
     const environmentMetrics = req.body;
-    console.log(req.body);
     const updatedEnvironment = await environmentService.updateEnvironment(environmentMetrics);
     res.status(200).json(updatedEnvironment);
 });
