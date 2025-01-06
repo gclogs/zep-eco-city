@@ -29,12 +29,12 @@
 ## ⏰ 개발 기간
 2024.12.09 ~ 2024.12.XX
 
-## 팀원 소개
+## 👨‍💻 팀원 소개
 | 이름 | 역할 | Github | Email |
 |:---:|:---:|:---:|:---:|
 | 남경찬 | 🖥️ 서버 개발<br>🎨 디자인<br>📝 기획 | [![Github](https://img.shields.io/badge/Github-gclogs-181717?style=flat&logo=github)](https://github.com/gclogs) | [![Email](https://img.shields.io/badge/Email-woig9874%40naver.com-EA4335?style=flat&logo=gmail)](mailto:woig9874@naver.com) |
 
-## 기술 스택
+## ⚒️ 기술 스택
 <center>
     <code><img width="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/visual_studio_code.png" alt="Visual Studio Code" title="Visual Studio Code"/></code>
     <code><img width="50" src="https://raw.githubusercontent.com/marwin1991/profile-technology-icons/refs/heads/main/icons/typescript.png" alt="TypeScript" title="TypeScript"/></code>
@@ -46,7 +46,7 @@
 `Zep script`에서는 `ES Modules`를 지원하지 않기 때문에 `Webpack` 번들러를 사용하였습니다.
 `Zep script`를 쉽게 설정할 수 있는 [zep-script-webpack-template](https://github.com/scm1400/zep-script-webpack-template)을 사용하면 편합니다.
 
-## 기능
+## 🌟 기능
 ### 환경지표
 ![image](https://github.com/user-attachments/assets/8bc58550-aee3-4abf-9fde-c7eb376cb412)
 - 게임 화면 상단에 표시되는 환경지표는 현재 게임 세계의 환경 상태를 한눈에 파악할 수 있게 해주는 중요한 정보창입니다.
