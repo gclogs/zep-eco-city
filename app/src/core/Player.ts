@@ -170,12 +170,14 @@ export const playerManager = {
     toggleMovementMode: function(player: ScriptPlayer) {
         ScriptApp.getStorage(() => {
             const storage: PlayerStorage = JSON.parse(ScriptApp.storage);
-            const currentMode = storage.users[player.id].moveMode.current;
+            
+            const newMode = storage.users[player.id].moveMode.current === 'WALK' ? 'RUN' : 'WALK';
+            
+            storage.users[player.id].moveMode.current = newMode;
+            ScriptApp.setStorage(JSON.stringify(storage));
 
-            storage.users[player.id].moveMode.current = storage.users[player.id].moveMode.current === 'WALK' ? 'RUN' : 'WALK';
-
-            player.moveSpeed = storage.users[player.id].moveMode[currentMode].speed;
-            player.title = storage.users[player.id].moveMode[currentMode].title;
+            player.moveSpeed = storage.users[player.id].moveMode[newMode].speed;
+            player.title = storage.users[player.id].moveMode[newMode].title;
             player.sendUpdated();
         });
     },

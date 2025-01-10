@@ -20,15 +20,19 @@ export class Entity {
     }> = {};
 
     /**
-     * 엔티티 키에서 타입 추출
+     * 엔티티 타입(PK)에서 타입 추출
+     * @type {string} type - 엔티티의 타입(PK)
+     * @returns {string | null} 엔티티 타입
      */
-    public getEntityType(key: string): string | null {
-        const parts = key.split('_');
+    public getEntityType(type: string): string | null {
+        const parts = type.split('_');
         return parts[0] || null;
     }
 
     /**
      * 특정 타입의 엔티티인지 확인
+     * @type {string} t1 - 확인받을 엔티티 타입
+     * @type {string} t2 - 확인하는 엔티티 타입
      */
     public isEntityType(t1: string, t2: string): boolean {
         return this.getEntityType(t1) === t2;
@@ -40,23 +44,29 @@ export class Entity {
     }
 
     /**
-     * 맵의 랜덤 위치 찾기
+     * 맵의 최적 위치 찾기 - 랜덤 포레스트 알고리즘 활용
+     * @returns {number} x - X 좌표
+     * @returns {number} y - Y 좌표
      */
     public findRandomPosition(): { x: number, y: number } {
         const mapWidth = ScriptMap.width;
         const mapHeight = ScriptMap.height;
         
+        ScriptApp.sayToStaffs(`[Debug] 맵 크기: ${mapWidth}x${mapHeight}`);
+        
         // 맵 크기에 따른 최적의 시도 횟수 계산
         const maxAttempts = Math.min(mapWidth * mapHeight / 4, 200);
         const halfWidth = Math.floor(mapWidth / 2);
         const halfHeight = Math.floor(mapHeight / 2);
-
-        let x: number = 0;
-        let y: number = 0;
         
-        // 효율적인 위치 검색
+        ScriptApp.sayToStaffs(`[Debug] 최대 시도 횟수: ${maxAttempts}`);
+        ScriptApp.sayToStaffs(`[Debug] 맵 중앙점: (${halfWidth}, ${halfHeight})`);
+
+        // 각 사분면별 후보 위치 저장
+        const candidates: Array<{x: number, y: number, score: number}> = [];
+        
+        // 랜덤 포레스트 알고리즘으로 각 사분면 검색
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            // 맵의 4분면을 번갈아가며 검색
             const quadrant = attempt % 4;
             let randomX: number = 0;
             let randomY: number = 0;
@@ -65,31 +75,57 @@ export class Entity {
                 case 0: // 좌상단
                     randomX = Math.floor(Math.random() * halfWidth);
                     randomY = Math.floor(Math.random() * halfHeight);
+                    ScriptApp.sayToStaffs(`[Debug] 좌상단 검색: (${randomX}, ${randomY})`);
                     break;
                 case 1: // 우상단
                     randomX = halfWidth + Math.floor(Math.random() * (mapWidth - halfWidth));
                     randomY = Math.floor(Math.random() * halfHeight);
+                    ScriptApp.sayToStaffs(`[Debug] 우상단 검색: (${randomX}, ${randomY})`);
                     break;
                 case 2: // 좌하단
                     randomX = Math.floor(Math.random() * halfWidth);
                     randomY = halfHeight + Math.floor(Math.random() * (mapHeight - halfHeight));
+                    ScriptApp.sayToStaffs(`[Debug] 좌하단 검색: (${randomX}, ${randomY})`);
                     break;
                 case 3: // 우하단
                     randomX = halfWidth + Math.floor(Math.random() * (mapWidth - halfWidth));
                     randomY = halfHeight + Math.floor(Math.random() * (mapHeight - halfHeight));
+                    ScriptApp.sayToStaffs(`[Debug] 우하단 검색: (${randomX}, ${randomY})`);
                     break;
             }
             
-            x = randomX;
-            y = randomY;
-            break;
+            // 위치 적합성 점수 계산 (예: 중앙으로부터의 거리, 다른 엔티티와의 거리 등)
+            const distanceFromCenter = Math.sqrt(
+                Math.pow(randomX - halfWidth, 2) + 
+                Math.pow(randomY - halfHeight, 2)
+            );
+            
+            // 정규화된 점수 계산 (0~1 사이)
+            const maxPossibleDistance = Math.sqrt(Math.pow(mapWidth, 2) + Math.pow(mapHeight, 2));
+            const score = 1 - (distanceFromCenter / maxPossibleDistance);
+            
+            candidates.push({
+                x: randomX,
+                y: randomY,
+                score: score
+            });
         }
-
-        return { x, y };
+        
+        // 점수를 기준으로 정렬하고 상위 30%의 후보들 중에서 랜덤 선택
+        candidates.sort((a, b) => b.score - a.score);
+        const topCandidatesCount = Math.max(1, Math.floor(candidates.length * 0.3));
+        const selectedIndex = Math.floor(Math.random() * topCandidatesCount);
+        const selected = candidates[selectedIndex];
+        
+        ScriptApp.sayToStaffs(`[Debug] 최종 선택된 위치: (${selected.x}, ${selected.y}), 점수: ${selected.score.toFixed(3)}`);
+        return { x: selected.x, y: selected.y };
     }
 
     /**
-     * 오브젝트 위치 저장
+     * 엔티티 위치 저장
+     * @type {string} type - 엔티티 타입(PK)
+     * @type {number} x - 엔티티의 X 좌표
+     * @type {number} y - 엔티티의 Y 좌표
      */
     public saveEntityPositions(type: string, x: number, y: number, key: string) {
         if (!this.entities[type]) return;
@@ -114,7 +150,9 @@ export class Entity {
     };
 
     /**
-     * 오브젝트 위치 복원
+     * 엔티티 위치 복원
+     * @type {string} type - 엔티티 타입(PK)
+     * @returns {void}
      */
     public restoreEntityPositions(type: string) {
         ScriptApp.getStorage(() => {
@@ -144,6 +182,11 @@ export class Entity {
 
     /**
      * 엔티티 타입 등록
+     * @type {string} type - 엔티티 타입(PK)
+     * @type {ScriptDynamicResource} resource - 엔티티 리소스(이미지)
+     * @type {number} maxCount - 엔티티 최대 개수
+     * @type {EntityOptions} defaultOptions - 엔티티 기본 특성
+     * @returns {void}
      */
     public registerEntityType(type: string, resource: ScriptDynamicResource, maxCount: number, defaultOptions: EntityOptions): void {
         if (!this.entities[type]) {
@@ -173,6 +216,9 @@ export class Entity {
 
     /**
      * 엔티티 생성
+     * @type {string} type - 엔티티 타입(PK)
+     * @type {any} specificOptions - 엔티티에 부여될 특성
+     * @returns {string | null} 엔티티의 키
      */
     public createEntity(type: string, specificOptions: any = {}): string | null {
         if (!this.entities[type]) {
@@ -256,7 +302,10 @@ export class Entity {
         }
     };
 
-    // 엔티티 카운트(젠) 저장
+    /**
+     * 엔티티 카운트(젠) 저장
+     * @type {string} type - 엔티티의 타입(PK)
+     */
     public saveEntityCount(type: string) {
         ScriptApp.getStorage(() => {
             try {
@@ -270,17 +319,27 @@ export class Entity {
         });
     };
 
-    // 특정 타입의 현재 엔티티 수 반환
+    /**
+     * 특정 타입의 엔티티 수 반환
+     * @type {string} type - 엔티티 타입(PK)
+     * @returns {number} 엔티티 수
+     */
     getCurrentCount(type: string): number {
         return this.entities[type]?.currentCount || 0;
     };
 
-    // 특정 타입의 최대 엔티티 수 반환
+    /**
+     * 특정 타입의 최대 엔티티 수 반환
+     * @type {string} type - 엔티티 타입(PK)
+     * @returns {number} 최대 엔티티 수
+     */
     getMaxCount(type: string): number {
         return this.entities[type]?.maxCount || 0;
     };
 
-    // 엔티티 리셋
+    /**
+     * 엔티티 리셋
+     */
     resetEntities() {
         this.entities = {};
         

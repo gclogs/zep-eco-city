@@ -156,10 +156,8 @@ export const environmentManager = {
             return;
         }
 
-        const newEmission = this.calculateNewCarbonEmission(metrics.carbonEmission);
+        this.calculateNewCarbonEmission(metrics.carbonEmission);
         this.processAirPollutionUpdate(this.metrics.carbonEmission);
-        
-        ScriptApp.sayToStaffs(`환경 지표 업데이트: 탄소배출량 ${this.metrics.carbonEmission.toFixed(5)}`);
         this.updateDisplays();
     },
 

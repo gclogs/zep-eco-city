@@ -1,6 +1,8 @@
 import { ScriptPlayer } from "zep-script";
 import { playerManager } from "./src/core/Player";
 import { environmentManager } from "./src/core/Environment";
+import { blockEntity } from "./src/entity/Block";
+import { Entity } from "./src/core/Entity";
 
 const STATE_INIT = 3000;
 const STATE_READY = 3001;
@@ -21,9 +23,15 @@ ScriptApp.onDestroy.Add(() => {
     environmentManager.syncWithEnvironmentDB();
 });
 
+// Q키를 눌렀을 때 블록 생성
+ScriptApp.addOnKeyDown(81, function (player) { 
+    blockEntity.createBlock();
+});
 
 // R키를 눌렀을 때 이동 모드 전환
-ScriptApp.addOnKeyDown(82, function (player) { playerManager.toggleMovementMode(player); });
+ScriptApp.addOnKeyDown(82, function (player) { 
+    playerManager.toggleMovementMode(player); 
+});
 
 ScriptApp.onSidebarTouched.Add((player: ScriptPlayer) => {
     const widget = player.showWidget("widget.html", "sidebar", 350, 350);
@@ -63,5 +71,14 @@ ScriptApp.onJoinPlayer.Add((player: ScriptPlayer) => {
         environmentManager.setWidget(widget);
     } else {
         ScriptApp.sayToStaffs(`[오류] ${player.name}님의 위젯 생성 실패`);
+    }
+});
+
+ScriptApp.onSay.Add((player: ScriptPlayer, message: string) => {
+    if(message === "scriptapp") {
+        ScriptApp.sayToStaffs(ScriptApp.storage);
+    } else if (message === "resetentities") {
+        const entity = new Entity();
+        entity.resetEntities();
     }
 });
