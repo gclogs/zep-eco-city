@@ -2,11 +2,18 @@
  * Configuration class for managing application settings.
  * Provides methods to retrieve API URLs.
  */
-export class Config {
-    static readonly ip: string = "http://220.87.215.43";
-    static readonly port: number = 3000;
-    
-    static getApiUrl(endpoint: string): string {
+
+export enum COLOR {
+    RED = 0xff0000,
+    GREEN = 0x00ff00,
+    BLUE = 0x0000ff
+}
+
+export const CONFIG = {
+    ip: "http://218.158.196.248",
+    port: 3000,
+
+    apiURL(endpoint: string): string {
         return `${this.ip}:${this.port}/api/${endpoint}`;
     }
 }
