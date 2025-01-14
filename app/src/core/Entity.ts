@@ -1,10 +1,14 @@
-import { ColorType, ScriptDynamicResource, ScriptPlayer, TileEffectType } from "zep-script";
+import { ScriptDynamicResource } from "zep-script";
+import { COLOR } from "../utils/Config";
 interface EntityOptions {
-    npcProperty: { name: string },
+    npcProperty: { name: string, hpColor: number, hp: number, hpMax: number },
     overlap: boolean,
     movespeed: number,
+    key?: string,
+    useDirAnim: boolean,
     collide?: boolean,
-    useDirAnim: boolean
+    offsetX: number,
+    offsetY: number
 }
 
 /**
@@ -38,6 +42,9 @@ export class Entity {
         return this.getEntityType(t1) === t2;
     }
 
+    /**
+     * 특정 타입의 엔티티 유효성 검증
+     */
     public isValidEntity(key: string): boolean {
         const type = this.getEntityType(key);
         return type !== null && type in this.entities;
@@ -144,7 +151,7 @@ export class Entity {
                 storage.entityPositions[type] = this.entities[type].positions;
                 ScriptApp.setStorage(JSON.stringify(storage));
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 저장 중 오류 발생 (${type}):`, ColorType.RED);
+                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 저장 중 오류 발생 (${type}):`, COLOR.RED);
             }
         });
     };
@@ -175,7 +182,7 @@ export class Entity {
                     this.entities[type].positions = positions;
                 }
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 복원 중 오류 발생 (${type}):`, ColorType.RED);
+                ScriptApp.sayToStaffs(`${error} 오브젝트 위치 복원 중 오류 발생 (${type}):`, COLOR.RED);
             }
         });
     };
@@ -210,7 +217,7 @@ export class Entity {
                 ScriptApp.sayToStaffs(`[Debug] 엔티티 카운트 복원됨: ${type} = ${storage.entityCounts[type]}`);
             }
         } catch (error) {
-            ScriptApp.sayToStaffs(`${error} 엔티티 카운트 복원 중 오류 발생 (${type}):`, ColorType.RED);
+            ScriptApp.sayToStaffs(`${error} 엔티티 카운트 복원 중 오류 발생 (${type}):`, COLOR.RED);
         }
     };
 
@@ -220,7 +227,7 @@ export class Entity {
      * @type {any} specificOptions - 엔티티에 부여될 특성
      * @returns {string | null} 엔티티의 키
      */
-    public createEntity(type: string, specificOptions: any = {}): string | null {
+    public createEntity(type: string, specificOptions: EntityOptions): string | null {
         if (!this.entities[type]) {
             ScriptApp.sayToStaffs(`[Debug] 등록되지 않은 엔티티 타입: ${type}`);
             return null;
@@ -239,12 +246,11 @@ export class Entity {
 
         ScriptApp.sayToStaffs(`[Debug] 엔티티 생성 위치 찾음: (${position.x}, ${position.y})`);
 
-        const entityKey = `${type}_${position.x}_${position.y}_${Date.now()}`;
-        const mergedOptions = Object.assign(
-            {},
-            specificOptions,
-            this.entities[type].options
-        );
+        const entityKey = `${type}_${position.x}_${position.y}`;
+        const mergedOptions: EntityOptions = {
+            ...specificOptions,
+            key: entityKey
+        };
 
         ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 시도: ${entityKey}`);
         ScriptApp.sayToStaffs(`[Debug] 옵션: ${JSON.stringify(mergedOptions)}`);
@@ -257,6 +263,7 @@ export class Entity {
             this.entities[type].currentCount++;
             this.saveEntityCount(type);
             this.saveEntityPositions(type, position.x, position.y, entityKey);
+            ScriptMap.playObjectAnimationWithKey(entityKey, "down", -1);
             ScriptApp.sayToStaffs(`[Debug] 오브젝트 생성 성공: ${entityKey} (현재 개수: ${this.entities[type].currentCount})`);
             return entityKey;
         }
@@ -283,14 +290,14 @@ export class Entity {
             entityType.positions = entityType.positions.filter(pos => pos.key !== key);
             
             // Storage 업데이트
-            ScriptApp.getStorage((storageStr: string) => {
+            ScriptApp.getStorage(() => {
                 try {
-                    const storage = storageStr ? JSON.parse(storageStr) : {};
+                    const storage = JSON.parse(ScriptApp.storage);
                     if (!storage.entityPositions) storage.entityPositions = {};
                     storage.entityPositions[type] = entityType.positions;
                     ScriptApp.setStorage(JSON.stringify(storage));
                 } catch (error) {
-                    ScriptApp.sayToStaffs(`${error} 오브젝트 위치 제거 중 오류 발생 (${type}):`, ColorType.RED);
+                    ScriptApp.sayToStaffs(`${error} 오브젝트 위치 제거 중 오류 발생 (${type}):`, COLOR.RED);
                 }
             });
         }
@@ -314,7 +321,7 @@ export class Entity {
                 storage.entityCounts[type] = this.entities[type].currentCount;
                 ScriptApp.setStorage(JSON.stringify(storage));
             } catch (error) {
-                ScriptApp.sayToStaffs(`${error} 오브젝트 카운트 저장 중 오류 발생 (${type}):`, ColorType.RED);
+                ScriptApp.sayToStaffs(`${error} 오브젝트 카운트 저장 중 오류 발생 (${type}):`, COLOR.RED);
             }
         });
     };
@@ -338,10 +345,15 @@ export class Entity {
     };
 
     /**
-     * 엔티티 리셋
+     * 특정 타입의 엔티티 리셋
      */
-    resetEntities() {
-        this.entities = {};
+    resetEntitiesType(type: string) {
+        this.entities[type] = {
+            resource: [],
+            maxCount: 0,
+            currentCount: 0,
+            positions: []
+        };
         
         ScriptApp.getStorage(() => {
             const storage = JSON.parse(ScriptApp.storage);
