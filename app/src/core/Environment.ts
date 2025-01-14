@@ -1,8 +1,6 @@
 // 환경 지표 인터페이스 정의
-
-import { Config } from "../../src/utils/Config";
-import { playerManager } from "./Player";
-import { ColorType, ScriptPlayer, ScriptWidget } from "zep-script";
+import { COLOR, CONFIG } from "../utils/Config";
+import { ScriptPlayer, ScriptWidget } from "zep-script";
 
 /**
  * 게임 내 환경 지표를 관리하기 위한 인터페이스
@@ -65,14 +63,14 @@ export const environmentManager = {
 
     // 초기화 시 저장된 데이터 로드
     initialize: function() {
-        ScriptApp.httpGet(`${Config.getApiUrl('environment/')}`, {}, (response: string) => {
+        ScriptApp.httpGet(`${CONFIG.apiURL('environment/')}`, {}, (response: string) => {
             try {
                 const savedMetrics: EnvironmentMetrics = JSON.parse(response);
                 this.metrics = savedMetrics;
                 ScriptApp.sayToStaffs(`환경 지표 로드 완료: ${this.metrics}`);
             } catch (error: unknown) {
                 if (error instanceof Error) {
-                    ScriptApp.sayToStaffs(`환경 지표 로드 중 오류 발생: ${error.message}`, ColorType.RED);
+                    ScriptApp.sayToStaffs(`환경 지표 로드 중 오류 발생: ${error.message}`, COLOR.RED);
                 }
                 this.loadFromAppStorage();
             }
@@ -152,7 +150,7 @@ export const environmentManager = {
     // 탄소 배출량 업데이트 처리
     processCarbonEmissionUpdate: function(metrics: Partial<EnvironmentMetrics>) {
         if (metrics.carbonEmission === undefined) {
-            ScriptApp.sayToStaffs("탄소 배출량 데이터가 없습니다.", ColorType.RED);
+            ScriptApp.sayToStaffs("탄소 배출량 데이터가 없습니다.", COLOR.RED);
             return;
         }
 
@@ -208,14 +206,14 @@ export const environmentManager = {
     },
 
     syncWithEnvironmentDB: function() {
-        ScriptApp.httpPostJson(`${Config.getApiUrl('environment/metrics')}`, {}, 
+        ScriptApp.httpPostJson(`${CONFIG.apiURL('environment/metrics')}`, {}, 
             this.metrics,
             (response: any) => {
             try {
                 const savedMetrics = JSON.parse(response);
-                ScriptApp.sayToStaffs(`[${savedMetrics}]: 환경 지표 저장 완료`, ColorType.BLUE);
+                ScriptApp.sayToStaffs(`[${savedMetrics}]: 환경 지표 저장 완료`, COLOR.BLUE);
             } catch (error) {
-                ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", ColorType.RED);
+                ScriptApp.sayToStaffs("환경 지표 저장 중 오류 발생:", COLOR.RED);
             }
         });
     }
