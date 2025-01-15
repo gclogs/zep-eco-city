@@ -118,13 +118,15 @@
         }
 
         window.addEventListener("message", function (e) {
-            if (e.data.type === "update_metrics") {
+            const message = e.data;
+            
+            if (message.type === "update_metrics") {
                 document.getElementById("airPollution").textContent = 
-                    e.data.data.airPollution.toFixed(3) + " PPM";
+                    message.data.airPollution.toFixed(3) + " PPM";
                 document.getElementById("carbonEmission").textContent = 
-                    e.data.data.carbonEmission.toFixed(3) + " 톤";
+                    message.data.carbonEmission.toFixed(3) + " 톤";
                 document.getElementById("recyclingRate").textContent = 
-                    e.data.data.recyclingRate.toFixed(3) + "%";
+                    message.data.recyclingRate.toFixed(3) + "%";
             }
         });
     </script>
