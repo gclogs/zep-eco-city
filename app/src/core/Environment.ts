@@ -1,6 +1,7 @@
 // 환경 지표 인터페이스 정의
 import { COLOR, CONFIG } from "../utils/Config";
 import { ScriptPlayer, ScriptWidget } from "zep-script";
+import { Widget } from "./Widget";
 
 /**
  * 게임 내 환경 지표를 관리하기 위한 인터페이스
@@ -30,16 +31,6 @@ const ENVIRONMENT_CONSTANTS = {
     MIN_RANDOM_FACTOR: 0.00002,
     MAX_RANDOM_FACTOR: 0.00005
 } as const;
-
-// 메시지 타입 정의
-interface WidgetMessage {
-    type: 'close' | 'update_metrics';
-    data?: {
-        airPollution: number;
-        carbonEmission: number;
-        recyclingRate: number;
-    };
-}
 
 // 환경 관리자
 export const environmentManager = {
@@ -108,20 +99,6 @@ export const environmentManager = {
         }
     },
 
-    // 위젯 설정
-    setWidget: function(widget: ScriptWidget) {
-        this.displays.widgets.add(widget);
-        this.updateDisplays();
-        
-        // 위젯 메시지 이벤트 핸들러 설정
-        widget.onMessage.Add((player: ScriptPlayer, message: WidgetMessage) => {
-            if (message.type === "close") {
-                this.displays.widgets.delete(widget);
-                widget.destroy();
-            }
-        });
-    },
-
     // 주기적인 환경 지표 업데이트
     scheduleUpdateEnvironmentByMovement: function(dt: number) {
         this.updateTimer += dt;
@@ -133,7 +110,6 @@ export const environmentManager = {
             ScriptApp.getStorage(() => {
                 const storage = JSON.parse(ScriptApp.storage);
                 const users = storage.users;
-
 
                 for (const playerId in users) {
                     const currentMode = users[playerId].moveMode[users[playerId].moveMode.current];
@@ -156,7 +132,7 @@ export const environmentManager = {
 
         this.calculateNewCarbonEmission(metrics.carbonEmission);
         this.processAirPollutionUpdate(this.metrics.carbonEmission);
-        this.updateDisplays();
+        this.updateEnvironmentWidget();
     },
 
     // 새로운 탄소 배출량 계산
@@ -182,18 +158,23 @@ export const environmentManager = {
         this.state.lastCarbonEmission = carbonEmission;
     },
 
-    // 디스플레이 업데이트
-    updateDisplays: function() {
-        Array.from(this.displays.widgets).forEach((widget: any) => {
-            widget.sendMessage({
+    // 환경지표 Widget 업데이트
+    updateEnvironmentWidget: function() {
+        try {
+            const metricsOptions = {
                 type: "update_metrics",
                 data: {
                     airPollution: this.metrics.airPollution,
                     carbonEmission: this.metrics.carbonEmission,
-                    recyclingRate: this.metrics.recyclingRate,
+                    recyclingRate: this.metrics.recyclingRate
                 }
-            });
-        });
+            };
+            
+            const widget = new Widget();
+            widget.updateWidget("environmentWidget", metricsOptions);
+        } catch (error) {
+            ScriptApp.sayToStaffs(`[오류] 환경 위젯 업데이트 실패`);
+        }
     },
 
     saveEnvironment: function() {
