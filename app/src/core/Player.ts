@@ -1,6 +1,7 @@
 import { ScriptPlayer } from "zep-script";
 import { COLOR, CONFIG } from "../utils/Config";
 import { Script } from "vm";
+import { Widget } from "./Widget";
 
 // 이동 모드 설정 인터페이스
 interface MoveMode {
@@ -35,22 +36,32 @@ interface PlayerStorage {
     }
 }
 
+// 플레이어 상수
+const PLAYER_CONSTANTS = {
+    UPDATE_INTERVAL: 1,
+    SAVE_INTERVAL: 5,
+    WALK_CARBON_EMISSION_FACTOR: 0.0001,
+    RUN_CARBON_EMISSION_FACTOR: 0.0007
+};
+
 // 이동 모드 상수
 const MOVE_MODES = {
     WALK: {
         speed: 80,
         title: "🚶🏻 걷기",
-        carbonEmission: 0.0001
+        carbonEmission: PLAYER_CONSTANTS.WALK_CARBON_EMISSION_FACTOR
     },
     RUN: {
         speed: 150,
         title: "🏃🏻 달리기",
-        carbonEmission: 0.0007
+        carbonEmission: PLAYER_CONSTANTS.RUN_CARBON_EMISSION_FACTOR
     }
 } as const;
 
 // 플레이어 관리자
 export const playerManager = {
+
+    updateTimer: 0,
     
     loadPlayer: function(player: ScriptPlayer) {
         ScriptApp.httpGet(`${CONFIG.apiURL('users/')}${player.id}`, {}, (response: any) => {
@@ -65,13 +76,44 @@ export const playerManager = {
                 if(storage.users == undefined) {
                     storage.users = {};
                 }
-                
 
                 storage.users[player.id] = userData;
 
                 ScriptApp.setStorage(JSON.stringify(storage));
                 ScriptApp.sayToStaffs(`[${player.id}]: ${player.name} 플레이어 로드 완료`);
             });
+        });
+    },
+
+    scheduleUpdatePlayerWidget: function(dt: number, player: ScriptPlayer) {
+        this.updateTimer += dt;
+        
+        if (this.updateTimer >= PLAYER_CONSTANTS.UPDATE_INTERVAL) {
+            this.updateTimer = 0;
+            this.updatePlayerWidget(player);
+        }
+        
+        this.updatePlayerWidget(player);
+    },
+
+    // 플레이어 Widget 업데이트
+    updatePlayerWidget: function(player: ScriptPlayer) {
+        ScriptApp.getStorage(() => {
+            const storage = JSON.parse(ScriptApp.storage);
+            const users = storage.users;
+            if(!users) return;
+
+            const metricsOptions = {
+                type: "update_player",
+                data: {
+                    name: users[player.id].name,
+                    money: users[player.id].money,
+                    kills: users[player.id].kills
+                }
+            };
+            
+            const widget = new Widget();
+            widget.updateWidget("playerWidget", metricsOptions);
         });
     },
 
