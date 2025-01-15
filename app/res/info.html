@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+        }
+        .widget-container {
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .widget-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .widget-title {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .close-btn {
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 5px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        .info-label {
+            font-weight: bold;
+        }
+        .info-value {
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="widget-container">
+        <div class="widget-header">
+            <div class="widget-title">플레이어 정보</div>
+            <button class="close-btn" onclick="closeWidget()">×</button>
+        </div>
+        <div class="info-row">
+            <span class="info-label">이름:</span>
+            <span class="info-value" id="player-name">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">보유 금액:</span>
+            <span class="info-value" id="player-money">0</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">파괴한 블록:</span>
+            <span class="info-value" id="player-kills">0</span>
+        </div>
+    </div>
+
+    <script>
+        function closeWidget() {
+            window.parent.postMessage({ type: "close" }, "*");
+        }
+
+        window.addEventListener("message", function(e) {
+            const message = e.data;
+            
+            if (message.type === "update_player") {
+                const data = message.data;
+                document.getElementById("player-name").textContent = data.name || "-";
+                document.getElementById("player-money").textContent = data.money?.toLocaleString() || "0";
+                document.getElementById("player-kills").textContent = data.kills?.toLocaleString() || "0";
+            }
+        });
+    </script>
+</body>
+</html>
