@@ -10,7 +10,7 @@ export enum COLOR {
 }
 
 export const CONFIG = {
-    ip: "http://218.158.196.248",
+    ip: "http://175.208.109.116",
     port: 3000,
 
     apiURL(endpoint: string): string {

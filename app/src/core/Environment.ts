@@ -1,7 +1,7 @@
 // 환경 지표 인터페이스 정의
 import { COLOR, CONFIG } from "../utils/Config";
 import { ScriptPlayer, ScriptWidget } from "zep-script";
-import { Widget } from "./Widget";
+import { widgetManager } from "./Widget";
 
 /**
  * 게임 내 환경 지표를 관리하기 위한 인터페이스
@@ -112,6 +112,8 @@ export const environmentManager = {
                 const users = storage.users;
 
                 for (const playerId in users) {
+                    if (!users[playerId].moveMode) continue;
+                    
                     const currentMode = users[playerId].moveMode[users[playerId].moveMode.current];
                     this.state.totalCarbonEmission += currentMode.carbonEmission;
                 }
@@ -170,8 +172,7 @@ export const environmentManager = {
                 }
             };
             
-            const widget = new Widget();
-            widget.updateWidget("environmentWidget", metricsOptions);
+            widgetManager.updateWidget("environmentWidget", metricsOptions);
         } catch (error) {
             ScriptApp.sayToStaffs(`[오류] 환경 위젯 업데이트 실패`);
         }

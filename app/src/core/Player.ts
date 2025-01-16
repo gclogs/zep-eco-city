@@ -1,7 +1,7 @@
 import { ScriptPlayer } from "zep-script";
 import { COLOR, CONFIG } from "../utils/Config";
 import { Script } from "vm";
-import { Widget } from "./Widget";
+import { widgetManager } from "./Widget";
 
 // 이동 모드 설정 인터페이스
 interface MoveMode {
@@ -85,35 +85,39 @@ export const playerManager = {
         });
     },
 
-    scheduleUpdatePlayerWidget: function(dt: number, player: ScriptPlayer) {
+    scheduleUpdatePlayerWidget: function(dt: number) {
         this.updateTimer += dt;
         
         if (this.updateTimer >= PLAYER_CONSTANTS.UPDATE_INTERVAL) {
             this.updateTimer = 0;
-            this.updatePlayerWidget(player);
+            this.updatePlayerWidget();
         }
         
-        this.updatePlayerWidget(player);
+        this.updatePlayerWidget();
     },
 
     // 플레이어 Widget 업데이트
-    updatePlayerWidget: function(player: ScriptPlayer) {
+    updatePlayerWidget: function() {
         ScriptApp.getStorage(() => {
             const storage = JSON.parse(ScriptApp.storage);
             const users = storage.users;
             if(!users) return;
 
-            const metricsOptions = {
-                type: "update_player",
-                data: {
-                    name: users[player.id].name,
-                    money: users[player.id].money,
-                    kills: users[player.id].kills
-                }
-            };
+            let metricsOptions = {};
+            for (const playerId in users) {
+                if(users[playerId].userId === undefined) continue;
+                
+                metricsOptions = {
+                    type: "update_player",
+                    data: {
+                        name: users[playerId].name,
+                        money: users[playerId].money,
+                        kills: users[playerId].kills
+                    }
+                };
+            }
             
-            const widget = new Widget();
-            widget.updateWidget("playerWidget", metricsOptions);
+            widgetManager.updateWidget("playerWidget", metricsOptions);
         });
     },
 
